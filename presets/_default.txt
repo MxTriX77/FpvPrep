@@ -1,0 +1,54 @@
+# Standard stick settings for heavy 10-13 inch quads, 2.5-3.7 kg all-up.
+# Used by "fix controls" for any quad type that has no settings file of its own.
+# Calculated, not measured on a drone. Flying it is built for: long cruise nose-down with a
+# fixed forward camera and steady throttle, brief pitch-ups to look ahead, slow precise
+# landings in wind, slow work near obstacles, and no flips or sharp turns.
+#
+# Centre sensitivity (roll, pitch 50 deg/s). A pilot closing the attitude loop through
+# video works at a crossover of about 2.4-2.8 rad/s (0.28-0.33 s total delay, 45 deg phase
+# margin). Stick needed for an attitude error = crossover * error / sensitivity. A 1 deg
+# error must need at least ~4.5 % stick, the smallest input a thumb repeats reliably, and
+# a 10 deg error must fit in half the stick. That bounds sensitivity to about 52-58 deg/s;
+# the setting has steps of 10, so 50 (the precise side). In cruise 1 deg of pitch is worth
+# roughly 0.3-0.5 m/s^2 of climb or sink, so the same fine centre holds height by pitch.
+#
+# Full-stick rate (roll, pitch 220 deg/s). The fastest thing asked of the drone is the
+# look-ahead: from a 20-35 deg cruise tilt to level and back, each way in about 0.3 s,
+# which is 100-150 deg/s and sits at 70-85 % stick. Helicopter agility requirements
+# (ADS-33E roll 50 deg/s) scaled by Froude number to a 0.6 m airframe (x4.6) give 230.
+# Nothing in this flying needs more, and less top end means a calmer outer stick.
+#
+# Yaw (80 centre, 240 full). A coordinated turn needs g*tan(bank)/speed: 33 deg/s at
+# 12 m/s and 35 deg bank, 65 deg/s at 5 m/s, so turns live below half stick (72 deg/s).
+# Yaw authority is only about 500-800 deg/s^2 on these sizes; stopping from 240 deg/s
+# takes 0.3-0.45 s, and a higher limit only adds overshoot.
+#
+# Expo 45 puts the first 40 % of roll and pitch stick on 0-35 deg/s. Holding against
+# 8-15 m/s wind needs 3-11 deg of tilt and gust corrections of 5-15 deg/s, all in there.
+#
+# Throttle. Hover thrust is 11-29 % of maximum across the fleet: 31-52 % stick with a
+# roughly square thrust curve, and cruise sits a few percent above hover. Mid 45 centres
+# the flat part between them; expo 40 cuts the slope there to 0.6, from about 0.41 to
+# 0.25 m/s^2 of vertical acceleration per 1 % of stick.
+#
+# Feedforward fades out over the inner 40 % of stick and ignores slow stick movement, so
+# small corrections do not kick the motors.
+
+set rates_type = ACTUAL
+set roll_rc_rate = 5
+set roll_srate = 22
+set roll_expo = 45
+set pitch_rc_rate = 5
+set pitch_srate = 22
+set pitch_expo = 45
+set yaw_rc_rate = 8
+set yaw_srate = 24
+set yaw_expo = 20
+set thr_mid = 45
+set thr_expo = 40
+set deadband = 4
+set yaw_deadband = 5
+set rc_smoothing_auto_factor = 80
+set feedforward_transition = 40
+set feedforward_jitter_factor = 12
+set feedforward_boost = 0

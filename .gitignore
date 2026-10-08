@@ -1,0 +1,12 @@
+# Everything read from real drones stays on this machine: config copies, hardware ids, logs
+quads/
+quads.md
+presets/drones/
+
+# UI previews
+mock/
+
+# Local-only language pack and working copy
+lang/ru.ps1
+FPV_RU.cmd
+PILOT/
