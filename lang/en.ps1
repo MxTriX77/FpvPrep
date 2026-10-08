@@ -28,16 +28,21 @@
     rx_half = '\b(slightly|bit|little)\b'
     rx_double = '\b(much|lot|way)\b'
 
+    # ---- build: the folder and launcher of this language's release
+    release = @{ folder = 'CONFIGURATOR'; launcher = 'CONFIG.cmd' }
+
     # ---- start screen
     banner = @(
         @('  FPVPREP 1.0', 'White', '  --  Betaflight pre-flight utility', 'Gray'),
         @('  build {0}  win32  serial cli 115200 8N1', 'DarkGray'),
-        @('  writes flight feel only. switches, channels, failsafe: never written.', 'DarkGray')
+        @('', 'DarkGray'),
+        @('  writes flight feel only. switches, channels, failsafe: never written.', 'DarkYellow')
     )
-    kv_workspace = 'workspace'; kv_saved = 'saved settings'; kv_usb = 'usb'; kv_last = 'last quad'
-    usb_none = 'none'; usb_found = 'drone detected'
+    kv_saved = 'saved settings'; kv_last = 'last quad'
     warn_bf = '[!!] keep the Betaflight program closed'
     note_help = 'help - commands'
+    mock_bar = 'MOCK  //  pretend drone  //  nothing is read from or written to USB'
+    mock_note = 'each  status  goes round: healthy, with remarks, faulty'
 
     # ---- shared steps and failures
     s_find = 'acquiring drone on USB'
@@ -59,10 +64,7 @@
     r_bind = 'BIND {0}'
     s_read = 'reading config'
     f_which = 'which quad? type:  bind "NAME"'
-    kv_ctl = 'controls'; ctl_count = '{0} of {1} like every {2}'; ctl_none = 'no saved settings for {0} yet'
-    kv_own = 'own tweaks'; own_count = '{0}, this drone only'
-    ctl_count_std = '{0} of {1} like the standard heavy set'
-    preset_std = 'standard heavy'
+    preset_std = 'standard for heavy 10/13 inch quads'
     w_craft = "this drone calls itself '{0}'. That does not look like a {1}."
     n_skipped = "did not understand: '{0}'"
     n_bindmotor = 'for the motors:  motors'
@@ -129,8 +131,7 @@
     f_nopreset = 'no saved settings for {0}'
     q_anyway = 'apply {0} settings to it anyway?'
     n_nothing = 'nothing changed.'
-    ok_ctl_same = 'controls already like every {0} ({1} of {1}). not changed.'
-    s_ctl = 'controls for {0} ({1} values)'
+    s_ctl = 'controls: {0} values'
     s_snd = 'sound: off'
     s_write = 'writing to drone and saving'
     s_verify = 'drone restarting, reading back'
@@ -208,6 +209,6 @@
         yaw_more = 'yaw more'; pr_slightly_less = 'pitch roll slightly less'
         thr_much_more = 'throttle much more'; thr_more = 'throttle more'
         motors = 'motors'; motors_full = 'motors full'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

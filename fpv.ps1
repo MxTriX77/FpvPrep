@@ -403,7 +403,7 @@ function Motor-Check([string]$mode, [switch]$AfterReboot) {
 
 # ---------------------------------------------------------------- request parsing
 # Splits what follows a command word into: quad name, motor mode, leftover words.
-# Name: quoted, or unquoted in Latin letters/digits or ALL CAPS right after the command.
+# Name: the first word after the command, in any letters and any case; quotes only if it has spaces.
 function Parse-Target([string]$rest) {
     $low = $rest.ToLower()
     $motor = 'none'
@@ -412,7 +412,7 @@ function Parse-Target([string]$rest) {
     $clean = $rest -replace ('(?i)' + $script:STR['rx_flag_strip']), ' '
     $name = ''
     if ($clean -match '^\s*["«]([^"»]+)["»]') { $name = $Matches[1]; $clean = $clean.Substring($Matches[0].Length) }
-    elseif ($clean -cmatch '^\s*([A-Za-z0-9_-]+|[\p{Lu}0-9_-]{2,})(\s|$)') { $name = $Matches[1]; $clean = $clean.Substring($Matches[0].Length) }
+    elseif ($clean -match '^\s*(\S+)(\s|$)') { $name = $Matches[1]; $clean = $clean.Substring($Matches[0].Length) }
     return @{ name = $name; motor = $motor; free = @($clean -split '\s+' | Where-Object { $_ }) }
 }
 function Last-Name {
@@ -457,13 +457,6 @@ function Do-Bind([string]$rest) {
     Kv (T 'kv_craft') $d.craft
     Kv (T 'kv_fw') $d.fw
     if ($seen) { Kv (T 'kv_seen') (T 'seen_yes') 'Yellow' } else { Kv (T 'kv_seen') (T 'seen_no') }
-    $w = Wanted $name $id
-    if ($w.hasPreset) {
-        $same = @($w.want.Keys | Where-Object { "$($d.vals[$_])" -eq "$($w.want[$_])" }).Count
-        $c = 'Cyan'; if ($same -lt $w.want.Count) { $c = 'Yellow' }
-        if ($w.std) { Kv (T 'kv_ctl') (T 'ctl_count_std' $same $w.want.Count) $c } else { Kv (T 'kv_ctl') (T 'ctl_count' $same $w.want.Count $NAME) $c }
-    } else { Kv (T 'kv_ctl') (T 'ctl_none' $NAME) 'Yellow' }
-    if ($w.own.Count) { Kv (T 'kv_own') (T 'own_count' $w.own.Count) }
     if (-not (Craft-Matches $name $d.craft)) { Warn (T 'w_craft' $d.craft $NAME) }
     if ($r.free.Count) { Note (T 'n_skipped' ($r.free -join ' ')) }
     if ($r.motor -ne 'none') { Note (T 'n_bindmotor') }
@@ -509,9 +502,7 @@ function Do-Fix([string]$rest) {
             foreach ($k in $pw.Keys) { if ("$($d.vals[$k])" -ne "$($pw[$k])") { $todo[$k] = $pw[$k] } }
             Kv (T 'kv_level') (Signed $level) 'Yellow'
         }
-        $label = $NAME; if ($w.std) { $label = (T 'preset_std') }
-        if ($todo.Count -eq 0) { Ok (T 'ok_ctl_same' $label ($w.want.Count)) }
-        else { Step (T 's_ctl' $label $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" } }
+        if ($todo.Count) { Step (T 's_ctl' $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" } }
     }
     $sound = @(); if ($snd) { $sound = @('beeper -ALL', 'beacon -RX_LOST', 'beacon -RX_SET'); Step (T 's_snd') -Plain }
 
@@ -765,12 +756,7 @@ if ($Run) { foreach ($l in ($Run -split '\s*;;\s*')) { Dispatch $l }; return }
 
 Clear-Host
 Banner
-$usb = (T 'usb_none'); if ([System.IO.Ports.SerialPort]::GetPortNames().Count) { $usb = (T 'usb_found') }
-$rows = @(
-    @((T 'kv_workspace'), $DataRoot),
-    @((T 'kv_saved'), ((Get-ChildItem $presets -Filter '*.txt' | ForEach-Object { if ($_.BaseName -eq '_default') { T 'preset_std' } else { $_.BaseName } }) -join ', ')),
-    @((T 'kv_usb'), $usb)
-)
+$rows = @(, @((T 'kv_saved'), ((Get-ChildItem $presets -Filter '*.txt' | ForEach-Object { if ($_.BaseName -eq '_default') { T 'preset_std' } else { $_.BaseName } }) -join ', ')))
 if (Last-Name) { $rows += , @((T 'kv_last'), (Last-Name)) }
 foreach ($row in $rows) { Kv $row[0] $row[1]; if ($fancy) { Start-Sleep -Milliseconds 60 } }
 Write-Host ''

@@ -63,7 +63,7 @@ Check 'status works before any bind' ($o.Contains('5150aaaa') -and $o.Contains((
 $before = $script:saves
 $o = Line "$($C.bind) SIM"
 Check 'bind shows the drone and says bound' ($o.Contains('5150aaaa') -and $o.Contains('SIM20') -and $o.Contains('4.5.0') -and $o.Contains((T 'seen_no')) -and $o.Contains(((T 'b_bound') -f 'SIM 5150aaaa', '').Substring(0, 20)))
-Check 'bind reports 0 of 15 controls' ($o.Contains((T 'ctl_count' 0 15 'SIM')))
+Check 'bind says nothing about saved settings' (-not $o.Contains((T 'preset_std')) -and -not ($o -match '\b15\b'))
 Check 'bind does not run the health check' (-not (Has $o 'h_step'))
 Check 'bind writes nothing to the drone' ($script:saves -eq $before -and (Val 'roll_srate') -eq '15')
 $copy = Get-ChildItem (Join-Path $data 'quads') -Filter '*_SIM_5150aaaa_before.txt'
@@ -72,7 +72,7 @@ Check 'bind remembers the quad name' ((Last-Name) -eq 'SIM')
 
 $o = Line $C.status
 Check 'status shows rates, the health check and a green verdict' ($o.Contains('70 / 150') -and (Has $o 'h_step') -and $o.Contains((T 'good_status')))
-Check 'status says nothing about saved settings' (-not $o.Contains((T 'kv_ctl')) -and -not $o.Contains((T 'preset_std')))
+Check 'status says nothing about saved settings' (-not $o.Contains((T 'preset_std')) -and -not ($o -match '\b15\b'))
 Check 'no line carries a clock time' (-not ($o -match '\d\d:\d\d:\d\d'))
 
 # ---------------------------------------------------------------- fix
@@ -85,6 +85,7 @@ $o = Line $C.fix_ctl
 Check 'fix controls a second time changes nothing' ($script:saves -eq $before -and $o.Contains((T 'b_nofix' 'SIM 5150aaaa')))
 $o = Line $C.fix_short
 Check 'the bare word works as fix controls' ($o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'b_nofix' 'SIM 5150aaaa')))
+Check 'nothing to fix is said once, by the result bar only' (([regex]::Matches($o, 'SIM 5150aaaa')).Count -eq 2)
 $o = Line $C.fix_snd
 Check 'fix sound switches the beeps off and confirms' (-not $script:fc.beeps -and (Has $o 'ok_snd'))
 
@@ -177,7 +178,6 @@ Check 'and applies on yes' ((Val 'roll_srate') -eq '23')
 
 $script:fc = New-FC 'abcdef001122334455667788' 'NEWQ1'
 $o = Line "$($C.bind) NEWQ"
-Check 'a new type: bind says there are no saved settings' ($o.Contains((T 'ctl_none' 'NEWQ')))
 $o = Line $C.fix_ctl
 Check 'a new type: fix controls says so and writes nothing' ($o.Contains((T 'f_nopreset' 'NEWQ')) -and (Val 'roll_srate') -eq '15')
 $o = Line $C.yaw_more @('y')
@@ -192,7 +192,6 @@ Set-Content (Join-Path $data 'presets\_default.txt') -Encoding utf8 -Value @(
     'set thr_mid = 43', 'set thr_expo = 40', 'set deadband = 4')
 $script:fc = New-FC 'dddd00001111222233334444' 'ZED7'
 $o = Line "$($C.bind) ZED"
-Check 'a type with no file is measured against the standard set' ($o.Contains((T 'ctl_count_std' 1 7)))
 $o = Line $C.fix_ctl
 Check 'fix controls writes the standard set to it' ((Val 'roll_srate') -eq '25' -and (Val 'thr_mid') -eq '43' -and (Val 'thr_expo') -eq '40' -and (Val 'deadband') -eq '4')
 $o = Line $C.yaw_more @('y')
@@ -201,6 +200,12 @@ $script:fc = New-FC 'eeee00001111222233334444' 'ZED7'
 $o = Line "$($C.bind) ZED"; $o = Line $C.fix_ctl
 Check 'the next drone of that type gets the standard set plus the change' ((Val 'thr_mid') -eq '43' -and (Val 'yaw_srate') -eq '31' -and (Val 'roll_srate') -eq '25')
 
+# a name may be typed in any case and any letters, without quotes
+$script:fc = New-FC 'f00d00001111222233334444' 'ZED7'
+$o = Line "$($C.bind) zed"
+Check 'a lower-case name is accepted and finds the same type' ($o.Contains('f00d0000') -and $o.Contains('ZED') -and (Last-Name) -eq 'zed')
+$o = Line "$($C.bind) $($C.odd_name)"
+Check 'a lower-case name in the console language is accepted' ($o.Contains($C.odd_name.ToUpper()) -and (Last-Name) -eq $C.odd_name)
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)

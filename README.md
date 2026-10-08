@@ -47,8 +47,11 @@ Axis tuning works only on drones whose rates are in the ACTUAL format; on any ot
 | `presets\NAME.txt` | Created by the console the first time you adjust a quad type: its stick settings and stiffness level. None are shipped. |
 | `presets\_default.txt` | The standard set for heavy 10-13 inch quads (2.5-3.7 kg). Its header explains how each number was calculated. |
 | `tests\sim.ps1`, `tests\simfc.ps1` | Offline test and the pretend flight controller it runs against. |
+| `tests\mock.ps1` | The console against the pretend flight controller, to try it with nothing plugged in. |
+| `tests\console.ps1` | Opens a launcher in a real console window, types into it and reads its screen back. Catches what the simulator test cannot: the `.cmd` itself, typed input, cursor animation. |
+| `build.ps1` | Runs the simulator test, then makes one release folder per language (named by the `release` entry of its language file) and one mock folder (`MOCK\MOCK.cmd`), and checks each launcher in a real window. |
 
-A release is `FPV.cmd`, `fpv.ps1`, `bf.ps1`, one file from `lang\` and the `presets\` folder. Config copies, hardware ids and the log are written to `quads\`, which is not part of this repository.
+Run `.\build.ps1` to make the releases and the mock, on the Desktop unless `-OutRoot` says otherwise. For English that is `CONFIGURATOR\CONFIG.cmd`. Config copies, hardware ids and the log are written to `quads\`, which is not part of this repository.
 
 ## Test
 
