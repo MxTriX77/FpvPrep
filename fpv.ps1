@@ -564,8 +564,8 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
         if ($c1 -eq $c0 -and $m1 -eq $m0) { Note (T 'n_limit' $label) }
     }
     if ($plan.Count -eq 0) { Note (T 'n_nochange'); return }
-    if (-not (Ask (T 'q_apply'))) { Note (T 'n_nothing'); return }
 
+    # no question here: the command itself is the decision, and the opposite word undoes it
     $script:cur = @{ id = $id; name = $name; craft = $d.craft }
     if (-not (Write-And-Verify $name $id $plan @())) {
         Log "$name $id tune NOT CONFIRMED"

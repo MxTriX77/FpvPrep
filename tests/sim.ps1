@@ -90,16 +90,16 @@ Check 'fix sound switches the beeps off and confirms' (-not $script:fc.beeps -an
 # ---------------------------------------------------------------- axis tuning
 $o = Line $C.yaw_more @('y')
 Check 'yaw more steps centre by 10 and full stick by 40' ((Val 'yaw_rc_rate') -eq '10' -and (Val 'yaw_srate') -eq '34' -and $o.Contains('90 -> 100') -and $o.Contains('300 -> 340'))
-Check 'a confirmed change is remembered for the type with no further question' ((Preset 'SIM') -match 'set yaw_srate = 34' -and -not ((Preset 'SIM') -match 'set yaw_srate = 30') -and ([regex]::Matches($o, [regex]::Escape((T 'yn')))).Count -eq 1)
+Check 'an axis change is applied and remembered without any question' ((Preset 'SIM') -match 'set yaw_srate = 34' -and -not ((Preset 'SIM') -match 'set yaw_srate = 30') -and -not $o.Contains((T 'yn')))
 $o = Line $C.pr_slightly_less @('y')
 Check 'pitch roll slightly less: half steps on both axes' ((Val 'roll_rc_rate') -eq '4' -and (Val 'pitch_rc_rate') -eq '4' -and (Val 'roll_srate') -eq '23' -and (Val 'pitch_srate') -eq '23')
 $o = Line $C.thr_much_more @('y')
 Check 'throttle much more: expo down by 20' ((Val 'thr_expo') -eq '5')
-$o = Line $C.thr_more @('n')
-Check 'answering no to apply changes nothing' ((Val 'thr_expo') -eq '5' -and (Has $o 'n_nothing') -and (Preset 'SIM') -match 'set thr_expo = 5')
-$o = Line $C.thr_more @('y')
-$o = Line $C.thr_more @('y')
-Check 'throttle stops at the limit' ((Val 'thr_expo') -eq '0' -and (Has $o 'n_nochange'))
+$o = Line $C.thr_more
+Check 'throttle more again: expo down to 0' ((Val 'thr_expo') -eq '0')
+$before = $script:saves
+$o = Line $C.thr_more
+Check 'throttle stops at the limit and writes nothing' ((Val 'thr_expo') -eq '0' -and (Has $o 'n_nochange') -and $script:saves -eq $before)
 $script:fc.rates.rates_type = 'BETAFLIGHT'
 $before = $script:saves
 $o = Line $C.yaw_more @('y')
