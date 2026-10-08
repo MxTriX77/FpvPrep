@@ -44,7 +44,7 @@
     f_nousb = 'no drone on USB. Re-seat the cable and try again.'
     f_noread = 'could not read the drone. Is the Betaflight program open? Close it.'
     f_unknowncmd = 'unknown command. type  help'
-    kv_id = 'drone id'; kv_craft = 'calls itself'; kv_fw = 'firmware'; kv_seen = 'seen before'
+    kv_id = 'drone id'; kv_craft = 'calls itself'; kv_fw = 'firmware'; kv_seen = 'bound before'
     seen_yes = 'YES'; seen_no = 'no - new drone'
     kv_drone = 'drone'
     errors = @(
@@ -178,7 +178,6 @@
     r_status = 'STATUS'
     s_readonly = 'reading config (nothing is changed)'
     kv_rates = '{0}, centre / full stick'; kv_ratefmt = 'rates format'
-    kv_preset = 'saved settings {0}'; preset_count = '{0} of {1} in the drone'
     r_radio = 'RADIO'
     s_calib = 'reading stick calibration (read only)'
     f_noradio = 'radio not found. On the radio choose "USB Storage (SD)".'

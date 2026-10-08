@@ -10,8 +10,8 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 
 | Command | What it does |
 |---|---|
-| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was seen before, how many stick settings match the type's. Writes nothing. No name = same quad type as last time. |
-| `status` | Rates, a health check, and a green / yellow / red verdict. Writes nothing. |
+| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before, how many stick settings match its type's. Writes nothing. NAME is whatever you call that kind of quad; no name = same as last time. |
+| `status` | The drone's current rates, a health check, and a green / yellow / red verdict. Writes nothing. |
 | `motors [full]` | All four motors together, about 1 second at idle or 3 seconds. **Props off.** |
 | `fix controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |
 | `fix sound` (or `sound`) | Switches the buzzer and motor beacon off. |
@@ -44,7 +44,7 @@ Axis tuning works only on drones whose rates are in the ACTUAL format; on any ot
 | `fpv.ps1` | The console: commands, checks, screens. No text of its own. |
 | `lang\en.ps1` | All text and command words. Add a language by copying it; start with `fpv.ps1 -Lang xx`. |
 | `bf.ps1` | One serial session with the flight controller, with the safety limit. |
-| `presets\NAME.txt` | Saved stick settings per quad type, and its stiffness level. |
+| `presets\NAME.txt` | Created by the console the first time you adjust a quad type: its stick settings and stiffness level. None are shipped. |
 | `presets\_default.txt` | The standard set for heavy 10-13 inch quads (2.5-3.7 kg). Its header explains how each number was calculated. |
 | `tests\sim.ps1`, `tests\simfc.ps1` | Offline test and the pretend flight controller it runs against. |
 

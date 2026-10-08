@@ -1,5 +1,5 @@
 # FPV PREP console engine. Started by FPV.cmd.
-#   bind "OTU"                  find the drone on USB and show what it is. Writes nothing.
+#   bind "NAME"                 find the drone on USB and show what it is. Writes nothing.
 #   status                      full check: health and rates. Writes nothing.
 #   motors [full]               motor check, props off
 #   fix controls / fix sound    write the type's saved stick settings / switch beeps off
@@ -678,11 +678,6 @@ function Do-Status {
         foreach ($a in 'roll', 'pitch', 'yaw') { Kv (T 'kv_rates' (T "ax_$a").ToLower()) "$([int]$d.vals["${a}_rc_rate"] * 10) / $([int]$d.vals["${a}_srate"] * 10) $(T 'unit_dps')" }
     } else { Kv (T 'kv_ratefmt') "$($d.vals['rates_type'])" 'Yellow' }
     Kv (T 'kv_thr') "$($d.vals['thr_expo'])"
-    foreach ($p in (Get-ChildItem $presets -Filter '*.txt')) {
-        $ps = Read-Settings $p.FullName
-        $label = $p.BaseName; if ($label -eq '_default') { $label = (T 'preset_std') }
-        Kv (T 'kv_preset' $label) (T 'preset_count' @($ps.Keys | Where-Object { "$($d.vals[$_])" -eq "$($ps[$_])" }).Count $ps.Count)
-    }
     $sev = Health $d
     Log "$who status sev=$sev"
     Verdict $sev $who (T 'good_status') $clock

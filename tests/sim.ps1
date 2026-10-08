@@ -71,7 +71,8 @@ Check 'bind saves a config copy without the dump' ($copy.Count -eq 1 -and -not (
 Check 'bind remembers the quad name' ((Last-Name) -eq 'SIM')
 
 $o = Line $C.status
-Check 'status shows rates, the health check and a green verdict' ($o.Contains('70 / 150') -and (Has $o 'h_step') -and $o.Contains((T 'preset_count' 0 15)) -and $o.Contains((T 'good_status')))
+Check 'status shows rates, the health check and a green verdict' ($o.Contains('70 / 150') -and (Has $o 'h_step') -and $o.Contains((T 'good_status')))
+Check 'status says nothing about saved settings' (-not $o.Contains((T 'kv_ctl')) -and -not $o.Contains((T 'preset_std')))
 Check 'no line carries a clock time' (-not ($o -match '\d\d:\d\d:\d\d'))
 
 # ---------------------------------------------------------------- fix
