@@ -88,6 +88,14 @@ Check 'the bare word works as fix controls' ($o.Contains((T 'r_fix' (T 'w_ctl'))
 Check 'nothing to fix is said once, by the result bar only' (([regex]::Matches($o, 'SIM 5150aaaa')).Count -eq 2)
 $o = Line $C.fix_snd
 Check 'fix sound switches the beeps off and confirms' (-not $script:fc.beeps -and (Has $o 'ok_snd'))
+# a file of one drone's own values (made by hand, by its id) is written on top of the type's
+New-Item -ItemType Directory -Force (Join-Path $data 'presets\drones') | Out-Null
+Set-Content (Join-Path $data 'presets\drones\5150aaaa.txt') -Encoding utf8 -Value @('# this drone only', 'set thr_mid = 100', 'set thr_expo = 100')
+$o = Line $C.fix_ctl
+Check 'one drone''s own values are written on top of the type''s' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '100' -and (Val 'roll_srate') -eq '25')
+[IO.File]::Delete((Join-Path $data 'presets\drones\5150aaaa.txt'))
+$script:fc.rates.thr_mid = '50'; $script:fc.rates.thr_expo = '25'
+Check 'the standard set shipped with the tool leaves the throttle curve alone' (-not ((Get-Content (Join-Path $repo 'presets\_default.txt') -Raw) -match '(?m)^set (thr_|throttle)'))
 
 # ---------------------------------------------------------------- axis tuning
 $o = Line $C.yaw_more @('y')
@@ -213,7 +221,7 @@ $assign = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.As
 $forbidden = Invoke-Expression $assign.Right.Extent.Text
 $blocked = @($script:sent | Sort-Object -Unique | Where-Object { $_.Trim() -match $forbidden })
 Check "none of the $(@($script:sent | Sort-Object -Unique).Count) distinct commands sent is refused by bf.ps1" ($blocked.Count -eq 0)
-Check 'bf.ps1 still refuses switch, channel and failsafe commands' (('aux 0 0 0 900 2100 0 0' -match $forbidden) -and ('set failsafe_delay = 5' -match $forbidden) -and ('rxfail 3 h' -match $forbidden) -and ('beeper ALL' -match $forbidden) -and ('defaults' -match $forbidden))
+Check 'bf.ps1 still refuses switch, channel and failsafe commands' (('aux 0 0 0 900 2100 0 0' -match $forbidden) -and ('set failsafe_delay = 5' -match $forbidden) -and ('rxfail 3 h' -match $forbidden) -and ('beacon RX_LOST' -match $forbidden) -and ('beeper RX_LOST' -match $forbidden) -and -not ('beeper ALL' -match $forbidden) -and ('defaults' -match $forbidden))
 $shipped = @(Get-ChildItem (Join-Path $repo 'presets') -Filter '*.txt' | ForEach-Object { Get-Content $_.FullName } | Where-Object { $_ -and $_ -notmatch '^\s*#' })
 Check "all $($shipped.Count) lines of the shipped settings files are plain 'set' lines the guard allows" (@($shipped | Where-Object { $_ -notmatch '^set \w+ = \S+$' -or $_ -match $forbidden }).Count -eq 0)
 

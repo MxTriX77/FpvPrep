@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 # Hard limit: this tool changes flight feel only. Anything that could alter switches, channels,
 # output pins, receiver or failsafe behaviour is refused before the port is even opened.
 $forbidden = '^(defaults|aux|adjrange|rxrange|rxfail|map|resource|serial|feature|servo|smix|mmix|timer|dma|vtx|vtxtable|led|color|flash_erase|msc|bind_rx|bl|escprog)\b' +
-             '|^(beeper|beacon)\s+[^-\s]' +   # beeps may only be switched off (-NAME), never on
+             '|^beacon\s+[^-\s]|^beeper\s+(?!-|ALL\s*$)\S' +   # beeps: off by name (-NAME), or the buzzer back on as a whole (beeper ALL); the motor beacon only off
              '|^set\s+(failsafe|pinio|serialrx|rx_|rssi|max_aux|servo|channel_forwarding|gps_rescue|box_user)'
 $blocked = @($Commands | ForEach-Object { $_.Trim() } | Where-Object { $_ -match $forbidden })
 if ($blocked.Count) { throw "Refused, not a flight-feel setting: $($blocked -join ' | ')" }

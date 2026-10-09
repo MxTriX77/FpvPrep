@@ -3,6 +3,7 @@
 # Calculated, not measured on a drone. Flying it is built for: long cruise nose-down with a
 # fixed forward camera and steady throttle, brief pitch-ups to look ahead, slow precise
 # landings in wind, slow work near obstacles, and no flips or sharp turns.
+# First flown on 2026-10-09: roll, pitch and yaw were reported as right.
 #
 # Centre sensitivity (roll, pitch 50 deg/s). A pilot closing the attitude loop through
 # video works at a crossover of about 2.4-2.8 rad/s (0.28-0.33 s total delay, 45 deg phase
@@ -26,10 +27,14 @@
 # Expo 45 puts the first 40 % of roll and pitch stick on 0-35 deg/s. Holding against
 # 8-15 m/s wind needs 3-11 deg of tilt and gust corrections of 5-15 deg/s, all in there.
 #
-# Throttle. Hover thrust is 11-29 % of maximum across the fleet: 31-52 % stick with a
-# roughly square thrust curve, and cruise sits a few percent above hover. Mid 45 centres
-# the flat part between them; expo 40 cuts the slope there to 0.6, from about 0.41 to
-# 0.25 m/s^2 of vertical acceleration per 1 % of stick.
+# Throttle is deliberately NOT in this set. An earlier version wrote a curve (mid 45,
+# expo 40) worked out for a hover at 31-52 % of motor power. The first heavy quad it was
+# flown on lifts off at about 62 %, and its builder had shaped the throttle for that
+# (mid 100, expo 100: power = 1 - (1 - stick)^3, which spreads the last 10 % of power over
+# almost half the stick, where a loaded quad on a tired battery spends its time).
+# Overwriting it moved lift-off from about 28 % stick to 70 % and squeezed that last 10 %
+# into 6 points of stick. How much power a quad has in hand cannot be worked out from
+# here; the builder's throttle curve stays as it is.
 #
 # Feedforward fades out over the inner 40 % of stick and ignores slow stick movement, so
 # small corrections do not kick the motors.
@@ -44,8 +49,6 @@ set pitch_expo = 45
 set yaw_rc_rate = 8
 set yaw_srate = 24
 set yaw_expo = 20
-set thr_mid = 45
-set thr_expo = 40
 set deadband = 4
 set yaw_deadband = 5
 set rc_smoothing_auto_factor = 80

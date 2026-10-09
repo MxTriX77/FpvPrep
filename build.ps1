@@ -5,18 +5,22 @@
 # What it makes:
 #   one release per language   the console for a real drone over USB. Its folder and launcher
 #                              names come from the language file ("release" entry).
-#   one mock                   MOCK\MOCK.cmd, the same console against a pretend drone, in the
+#   one mock                   MOCK\MOCK.cmd, the same console against a pretend drone, with
+#                              nothing on screen marking it as a mock, in the
 #                              language given by -MockLang (ru if there is one, else the first).
 # Nothing is released untested:
 #   1. tests\sim.ps1 must pass for a language, or nothing is built for it;
 #   2. after building, each launcher is opened in a real (hidden) console window, typed into and
 #      read back by tests\console.ps1.
-param([string[]]$Lang, [string]$MockLang, [string]$OutRoot = [Environment]::GetFolderPath('Desktop'))
+#   .\build.ps1 -MockOnly -MockFolder X -MockLauncher Y.cmd    only the mock, under other names
+param([string[]]$Lang, [string]$MockLang, [string]$OutRoot = [Environment]::GetFolderPath('Desktop'),
+      [string]$MockFolder = 'MOCK', [string]$MockLauncher = 'MOCK.cmd', [switch]$MockOnly)
 
 $ErrorActionPreference = 'Stop'
 $src = $PSScriptRoot
 if (-not $Lang) { $Lang = @(Get-ChildItem (Join-Path $src 'lang') -Filter '*.ps1' | ForEach-Object BaseName) }
 if (-not $MockLang) { $MockLang = $Lang[0]; if ($Lang -contains 'ru') { $MockLang = 'ru' } }
+if ($MockOnly) { $Lang = @($MockLang) }
 $ps = 'powershell.exe'; $psArgs = '-NoProfile', '-ExecutionPolicy', 'Bypass'
 
 # Opens one launcher in its own console, types the lines, returns the screen text
@@ -38,8 +42,8 @@ function Copy-Core([string]$to, [string]$l) {
     Copy-Item (Join-Path $src "lang\$l.ps1") -Destination (Join-Path $to 'lang') -Force
     Copy-Item (Join-Path $src 'presets\_default.txt') -Destination (Join-Path $to 'presets') -Force
 }
-function Write-Launcher([string]$file, [string]$title, [string]$script, [string]$l) {
-    [IO.File]::WriteAllText($file, "@echo off`r`ncolor 0A`r`ntitle $title`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$script`" -Lang $l %*`r`n", [Text.Encoding]::ASCII)
+function Write-Launcher([string]$file, [string]$title, [string]$script, [string]$l, [string]$more = '') {
+    [IO.File]::WriteAllText($file, "@echo off`r`ncolor 0A`r`ntitle $title`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$script`" -Lang $l $more%*`r`n", [Text.Encoding]::ASCII)
 }
 
 $failed = @()
@@ -57,22 +61,25 @@ foreach ($l in $Lang) {
     if (-not $simOk) { $sim | Where-Object { $_ -match 'FAIL' }; $failed += "$l simulator test"; "   NOT BUILT"; continue }
 
     # 2. the release
-    Copy-Core $rel $l
-    Write-Launcher $launcher 'FPV PREP' 'fpv.ps1' $l
-    "   release: $launcher"
-    $s = Try-Launcher $launcher @($w.help) $w.exit
-    $ok = $s.Contains('closed-on-exit-word=True') -and $s.Contains($txt['r_help']) -and $s.Contains($txt['warn_bf'])
-    "   release in a real window (start screen, help, exit): " + $(if ($ok) { 'OK' } else { 'FAILED' })
-    if (-not $ok) { $failed += "$l release" }
+    if (-not $MockOnly) {
+        Copy-Core $rel $l
+        Write-Launcher $launcher 'FPV PREP' 'fpv.ps1' $l
+        "   release: $launcher"
+        $s = Try-Launcher $launcher @($w.help) $w.exit
+        $ok = $s.Contains('closed-on-exit-word=True') -and $s.Contains($txt['r_help']) -and $s.Contains($txt['warn_bf'])
+        "   release in a real window (start screen, help, exit): " + $(if ($ok) { 'OK' } else { 'FAILED' })
+        if (-not $ok) { $failed += "$l release" }
+    }
 
     # 3. the mock, for one language only
     if ($l -eq $MockLang) {
-        $mock = Join-Path $OutRoot 'MOCK'; $mockCmd = Join-Path $mock 'MOCK.cmd'
+        $mock = Join-Path $OutRoot $MockFolder; $mockCmd = Join-Path $mock $MockLauncher
         if (Test-Path $mock -PathType Leaf) { throw "$mock is a file, not a folder" }
         Copy-Core $mock $l
         New-Item -ItemType Directory -Force (Join-Path $mock 'mock') | Out-Null
         Copy-Item (Join-Path $src 'tests\mock.ps1'), (Join-Path $src 'tests\simfc.ps1') -Destination (Join-Path $mock 'mock') -Force
-        Write-Launcher $mockCmd 'FPV PREP // MOCK' 'mock\mock.ps1' $l
+        # the mock looks exactly like the release on screen: only its folder and file name say what it is
+        Write-Launcher $mockCmd 'FPV PREP' 'mock\mock.ps1' $l '-Plain '
         "   mock:    $mockCmd"
         $s = Try-Launcher $mockCmd @("$($w.bind) $($w.odd_name)", $w.status, $w.status, $w.status) $w.exit
         $ok = $s.Contains('closed-on-exit-word=True') -and $s.Contains($txt['good_status']) -and $s.Contains(($txt['v_warn'] -f '', '').Trim(' /')) -and $s.Contains(($txt['v_fail'] -f '', '').Trim(' /'))

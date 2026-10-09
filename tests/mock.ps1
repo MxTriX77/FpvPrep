@@ -5,7 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File mock.ps1 -Lang en
 # Expects fpv.ps1 one folder up and simfc.ps1 beside this file (true in tests\ and in a build).
 # (the parameter is -Lines, not -Run: dot-sourcing fpv.ps1 below resets its own $Run here)
-param([string]$Lang = 'en', [string]$Lines)
+# -Plain: show nothing that marks it as a mock; the start screen is then the real one's.
+param([string]$Lang = 'en', [string]$Lines, [switch]$Plain)
 
 $ErrorActionPreference = 'Stop'
 $base = Split-Path $PSScriptRoot
@@ -50,8 +51,12 @@ function Mock-Line([string]$line) {
 if ($Lines) { foreach ($l in ($Lines -split '\s*;;\s*')) { Mock-Line $l }; return }
 Clear-Host
 Banner
-Bar (T 'mock_bar') 'Yellow'
-Write-Host ('  ' + (T 'mock_note')) -ForegroundColor DarkGray
+if ($Plain) {
+    Kv (T 'kv_saved') ((Get-ChildItem $presets -Filter '*.txt' | ForEach-Object { if ($_.BaseName -eq '_default') { T 'preset_std' } else { $_.BaseName } }) -join ', ')
+} else {
+    Bar (T 'mock_bar') 'Yellow'
+    Write-Host ('  ' + (T 'mock_note')) -ForegroundColor DarkGray
+}
 Write-Host ''
 Write-Host "$IND$(T 'warn_bf')" -ForegroundColor Yellow
 Note (T 'note_help')
