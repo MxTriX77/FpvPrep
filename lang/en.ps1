@@ -8,8 +8,9 @@
 
     # ---- command words
     rx_bind   = '^(bind|connect|connected)(\s+|$)'
-    rx_fix    = '^(fix)(\s+|$)'
+    rx_fix    = '^(set|fix)(\s+|$)'
     rx_fix_short = '^(controls|sound)(\s+|$)'
+    rx_name = '^(name)(\s+|$)'
     rx_help   = '^(help|\?)$'
     rx_status = '^(status)\b'
     rx_radio  = '^(radio|tx12)\b'
@@ -22,7 +23,7 @@
     rx_flag_strip = '(--)?(quiet|silent|full|no)[\s_-]*(motors?|check)|--bf'
     rx_ctl = 'control|rates?|sticks?'
     rx_snd = 'sound|beep|buzzer'
-    rx_yaw = '\b(yaw)\b'; rx_pitch = '\b(pitch)\b'; rx_roll = '\b(roll)\b'; rx_throttle = '\b(throttle|thr)\b'
+    rx_yaw = '\b(yaw)\b'; rx_pitch = '\b(pitch)\b'; rx_roll = '\b(roll)\b'
     rx_more = '\b(more|faster|sharper|higher|up)\b'
     rx_less = '\b(less|slower|softer|lower|down)\b'
     rx_half = '\b(slightly|bit|little)\b'
@@ -65,7 +66,6 @@
     s_read = 'reading config'
     f_which = 'which quad? type:  bind "NAME"'
     preset_std = 'standard for heavy 10/13 inch quads'
-    w_craft = "this drone calls itself '{0}'. That does not look like a {1}."
     n_skipped = "did not understand: '{0}'"
     n_bindmotor = 'for the motors:  motors'
     b_bound = '{0}  //  BOUND  //  {1}'
@@ -124,14 +124,21 @@
     chip_motors = 'motors'; chip_even = 'even'; chip_after = 'after run'; chip_stopped = 'stopped'
 
     # ---- fix
-    n_fixwhat = 'fix what?   fix controls   /   fix sound'
+    n_fixwhat = 'set what?   set controls   /   set sound   /   set name NAME'
     f_bindfirst = 'bind to a drone first:  bind "NAME"'
-    r_fix = 'FIX  //  {0}'; w_ctl = 'CONTROLS'; w_snd = 'SOUND'
+    r_fix = 'SET  //  {0}'; w_ctl = 'CONTROLS'; w_snd = 'SOUND'
     s_readdrone = 'reading the drone'
     f_nopreset = 'no saved settings for {0}'
-    q_anyway = 'apply {0} settings to it anyway?'
+    r_name = 'SET  //  NAME'
+    n_namewhat = 'which name?   set name NAME'
+    f_badname = 'name: Latin letters, digits, space and _ . - only, up to 16 characters'
+    kv_osdname = 'name on the OSD'
+    w_name_hidden = 'the name is not shown on this drone''s OSD'
+    b_named = '{0}  //  NAME SET  //  {1}'
     n_nothing = 'nothing changed.'
     s_ctl = 'controls: {0} values'
+    kv_thr_back = 'throttle, builder''s curve back'
+    w_thr_unknown = 'throttle curve 45 / 40 came from an older version; the original is not known'
     s_snd = 'sound: off'
     s_write = 'writing to drone and saving'
     s_verify = 'drone restarting, reading back'
@@ -142,21 +149,18 @@
     ok_snd = 'beeps are off'
     w_snd_unconf = 'could not confirm the beeps are off'
     done_ctl = 'controls'; done_snd = 'sound'
-    b_fixed = '{0}  //  FIXED: {1}  //  {2}'
-    b_nofix = '{0}  //  NOTHING TO FIX'
+    b_fixed = '{0}  //  SET: {1}  //  {2}'
     b_problems = 'PROBLEMS  //  see above'
 
-    # ---- yaw / pitch / roll / throttle  more / less
+    # ---- yaw / pitch / roll  more / less
     r_tune = 'TUNE  //  {0} {1}'
-    ax_yaw = 'YAW'; ax_pitch = 'PITCH'; ax_roll = 'ROLL'; ax_throttle = 'THROTTLE'
+    ax_yaw = 'YAW'; ax_pitch = 'PITCH'; ax_roll = 'ROLL'
     w_more = 'MORE'; w_less = 'LESS'
     s_readrates = 'reading current rates'
     f_unknown = 'do not know what quad this is. first:  bind "NAME"'
     f_notactual = "this drone's rates are in '{0}' format, not ACTUAL. Axis tuning does not work on it."
-    f_nothr = 'thr_expo not found in the config.'
     f_noaxis = 'rates for {0} not found in the config.'
     n_limit = '{0}: already at the limit'
-    kv_thr = 'throttle, expo'; thr_sharper = 'sharper'; thr_softer = 'softer around centre'
     kv_centre = '{0}, near centre'; kv_full = '{0}, full stick'
     n_nochange = 'nothing to change.'
     q_apply = 'apply?'
@@ -193,10 +197,11 @@
         @('status                ', 'check the drone'),
         @('motors [full]         ', 'motor run. PROPS OFF'),
         @(),
-        @('fix controls          ', 'write the stick settings'),
-        @('fix sound             ', 'switch the beeper off'),
+        @('set controls          ', 'write the stick settings'),
+        @('set sound             ', 'switch the beeper off'),
+        @('set name NAME         ', 'change the name shown on the OSD'),
         @(),
-        @('yaw | pitch | roll | throttle   more | less   [slightly | much]', ''),
+        @('yaw | pitch | roll   more | less   [slightly | much]', ''),
         @('pid stiffer | softer  ', 'roll and pitch PID, 10% a step. risky'),
         @(),
         @('radio                 ', 'radio stick calibration'),
@@ -205,10 +210,9 @@
     # ---- the lines tests\sim.ps1 types, so the same test runs in every language
     test_words = @{
         bind = 'bind'; bind_none = 'bind'; unknown = 'make it pretty'; status = 'status'
-        fix_ctl = 'fix controls'; fix_snd = 'fix sound'
+        fix_ctl = 'set controls'; fix_snd = 'set sound'; old_fix = 'fix controls'; set_name = 'set name'
         yaw_more = 'yaw more'; pr_slightly_less = 'pitch roll slightly less'
-        thr_much_more = 'throttle much more'; thr_more = 'throttle more'
         motors = 'motors'; motors_full = 'motors full'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

@@ -9,7 +9,7 @@ $repo = Split-Path $PSScriptRoot
 $data = Join-Path $env:TEMP "fpvprep_sim_$PID"
 New-Item -ItemType Directory -Force (Join-Path $data 'presets') | Out-Null
 Set-Content (Join-Path $data 'presets\SIM.txt') -Encoding utf8 -Value @(
-    "# Saved settings for 'SIM'.", '# craft: SIM20',
+    "# Saved settings for 'SIM'.",
     'set roll_rc_rate = 5', 'set roll_srate = 25', 'set roll_expo = 45',
     'set pitch_rc_rate = 5', 'set pitch_srate = 25', 'set pitch_expo = 45',
     'set yaw_rc_rate = 9', 'set yaw_srate = 30', 'set yaw_expo = 20',
@@ -72,6 +72,7 @@ Check 'bind remembers the quad name' ((Last-Name) -eq 'SIM')
 
 $o = Line $C.status
 Check 'status shows rates, the health check and a green verdict' ($o.Contains('70 / 150') -and (Has $o 'h_step') -and $o.Contains((T 'good_status')))
+Check 'status shows nothing about throttle' (-not ($o -match '(?i)\bthr|throttle') -and -not $o.ToLower().Contains($C.thr_more.Split(' ')[0]))
 Check 'status says nothing about saved settings' (-not $o.Contains((T 'preset_std')) -and -not ($o -match '\b15\b'))
 Check 'no line carries a clock time' (-not ($o -match '\d\d:\d\d:\d\d'))
 
@@ -82,10 +83,11 @@ Check 'fix controls confirms by reading back' ($o.Contains((T 'ok_confirmed' 15)
 Check 'fix controls saves an after copy' (@(Get-ChildItem (Join-Path $data 'quads') -Filter '*_SIM_5150aaaa_after.txt').Count -eq 1)
 $before = $script:saves
 $o = Line $C.fix_ctl
-Check 'fix controls a second time changes nothing' ($script:saves -eq $before -and $o.Contains((T 'b_nofix' 'SIM 5150aaaa')))
+Check 'fix controls always writes in full, even when the drone already has the values' ($script:saves -eq $before + 1 -and $o.Contains((T 'ok_confirmed' 15)))
+$o = Line "$($C.bind) SIM"
+Check 'a second bind does not overwrite the first copy of the drone' (@(Get-ChildItem (Join-Path $data 'quads') -Filter '*_5150aaaa_before.txt').Count -eq 1 -and (Get-Content $copy.FullName -Raw) -match 'set roll_srate = 15')
 $o = Line $C.fix_short
-Check 'the bare word works as fix controls' ($o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'b_nofix' 'SIM 5150aaaa')))
-Check 'nothing to fix is said once, by the result bar only' (([regex]::Matches($o, 'SIM 5150aaaa')).Count -eq 2)
+Check 'the bare word works as fix controls' ($o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'ok_confirmed' 15)))
 $o = Line $C.fix_snd
 Check 'fix sound switches the beeps off and confirms' (-not $script:fc.beeps -and (Has $o 'ok_snd'))
 # a file of one drone's own values (made by hand, by its id) is written on top of the type's
@@ -103,13 +105,9 @@ Check 'yaw more steps centre by 10 and full stick by 40' ((Val 'yaw_rc_rate') -e
 Check 'an axis change is applied and remembered without any question' ((Preset 'SIM') -match 'set yaw_srate = 34' -and -not ((Preset 'SIM') -match 'set yaw_srate = 30') -and -not $o.Contains((T 'yn')))
 $o = Line $C.pr_slightly_less @('y')
 Check 'pitch roll slightly less: half steps on both axes' ((Val 'roll_rc_rate') -eq '4' -and (Val 'pitch_rc_rate') -eq '4' -and (Val 'roll_srate') -eq '23' -and (Val 'pitch_srate') -eq '23')
-$o = Line $C.thr_much_more @('y')
-Check 'throttle much more: expo down by 20' ((Val 'thr_expo') -eq '5')
-$o = Line $C.thr_more
-Check 'throttle more again: expo down to 0' ((Val 'thr_expo') -eq '0')
 $before = $script:saves
 $o = Line $C.thr_more
-Check 'throttle stops at the limit and writes nothing' ((Val 'thr_expo') -eq '0' -and (Has $o 'n_nochange') -and $script:saves -eq $before)
+Check 'throttle is not something the tool tunes' ((Has $o 'f_unknowncmd') -and $script:saves -eq $before -and (Val 'thr_expo') -eq '25')
 $script:fc.rates.rates_type = 'BETAFLIGHT'
 $before = $script:saves
 $o = Line $C.yaw_more @('y')
@@ -173,23 +171,34 @@ $script:fc = New-FC '77bb00112233445566778899'
 $o = Line $C.bind_none
 Check 'bind with no name uses the last quad type' ($o.Contains('77bb0011') -and $o.Contains('SIM'))
 $o = Line $C.fix_ctl
-Check 'the next drone gets the type''s rates and its stiffness level' ((Val 'roll_srate') -eq '23' -and (Val 'yaw_srate') -eq '34' -and (Val 'thr_expo') -eq '0' -and (Val 'p_roll') -eq '78' -and (Val 'd_pitch') -eq '78')
+Check 'the next drone gets the type''s rates and its stiffness level' ((Val 'roll_srate') -eq '23' -and (Val 'yaw_srate') -eq '34' -and (Val 'thr_expo') -eq '25' -and (Val 'p_roll') -eq '78' -and (Val 'd_pitch') -eq '78')
 
 $script:fc = New-FC 'c0ffee001122334455667788' 'OTHER'
 $o = Line "$($C.bind) SIM"
-Check 'bind warns when the drone does not look like the type' ($o.Contains('OTHER'))
-$before = $script:saves
-$o = Line $C.fix_ctl @('n')
-Check 'fix controls asks first and changes nothing on no' ($script:saves -eq $before -and (Val 'roll_srate') -eq '15')
-$o = Line $C.fix_ctl @('y')
-Check 'and applies on yes' ((Val 'roll_srate') -eq '23')
+$o = Line $C.fix_ctl
+Check 'a drone whose own name differs from its type is set without any question' ((Val 'roll_srate') -eq '23' -and -not $o.Contains((T 'yn')))
 
+# set name: the name the drone shows on its OSD
+$before = $script:saves
+$o = Line "$($C.set_name) Bird_7"
+Check 'set name writes the OSD name and confirms it' ((Val 'craft_name') -eq 'Bird_7' -and $o.Contains('OTHER -> Bird_7') -and $o.Contains((T 'ok_confirmed' 1)) -and $script:saves -eq $before + 1)
+$o = Line "$($C.bind) SIM"
+Check 'bind then shows the new name' ($o.Contains('Bird_7'))
+$before = $script:saves
+$o = Line "$($C.set_name) a_name_that_is_far_too_long"
+Check 'a name over 16 characters is refused and nothing is written' ((Has $o 'f_badname') -and $script:saves -eq $before -and (Val 'craft_name') -eq 'Bird_7')
+$o = Line "$($C.set_name) bad;name"
+Check 'a name with other characters is refused' ((Has $o 'f_badname') -and $script:saves -eq $before)
+$o = Line $C.set_name
+Check 'set name with no name says how to use it' ((Has $o 'n_namewhat') -and $script:saves -eq $before)
+$o = Line $C.old_fix
+Check 'the old word for set still works' ($o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'done_ctl')))
 $script:fc = New-FC 'abcdef001122334455667788' 'NEWQ1'
 $o = Line "$($C.bind) NEWQ"
 $o = Line $C.fix_ctl
 Check 'a new type: fix controls says so and writes nothing' ($o.Contains((T 'f_nopreset' 'NEWQ')) -and (Val 'roll_srate') -eq '15')
 $o = Line $C.yaw_more @('y')
-Check 'a new type: a confirmed change creates its saved settings' ((Test-Path (Join-Path $data 'presets\NEWQ.txt')) -and (Preset 'NEWQ') -match '# craft: NEWQ1')
+Check 'a new type: a confirmed change creates its saved settings' ((Test-Path (Join-Path $data 'presets\NEWQ.txt')) -and (Preset 'NEWQ') -match 'set yaw_srate = 19')
 Add-Content (Join-Path $data 'presets\NEWQ.txt') 'set no_such_setting = 1'
 $o = Line $C.fix_ctl
 Check 'a line the drone rejects is reported, not hidden' ((Has $o 'f_rejected') -and (Has $o 'b_problems'))
@@ -203,7 +212,7 @@ $o = Line "$($C.bind) ZED"
 $o = Line $C.fix_ctl
 Check 'fix controls writes the standard set to it' ((Val 'roll_srate') -eq '25' -and (Val 'thr_mid') -eq '43' -and (Val 'thr_expo') -eq '40' -and (Val 'deadband') -eq '4')
 $o = Line $C.yaw_more @('y')
-Check 'a change for a new type starts its file from the standard set' ((Preset 'ZED') -match 'set thr_mid = 43' -and (Preset 'ZED') -match 'set yaw_srate = 31' -and (Preset 'ZED') -match '# craft: ZED7')
+Check 'a change for a new type starts its file from the standard set' ((Preset 'ZED') -match 'set thr_mid = 43' -and (Preset 'ZED') -match 'set yaw_srate = 31')
 $script:fc = New-FC 'eeee00001111222233334444' 'ZED7'
 $o = Line "$($C.bind) ZED"; $o = Line $C.fix_ctl
 Check 'the next drone of that type gets the standard set plus the change' ((Val 'thr_mid') -eq '43' -and (Val 'yaw_srate') -eq '31' -and (Val 'roll_srate') -eq '25')
@@ -214,6 +223,20 @@ $o = Line "$($C.bind) zed"
 Check 'a lower-case name is accepted and finds the same type' ($o.Contains('f00d0000') -and $o.Contains('ZED') -and (Last-Name) -eq 'zed')
 $o = Line "$($C.bind) $($C.odd_name)"
 Check 'a lower-case name in the console language is accepted' ($o.Contains($C.odd_name.ToUpper()) -and (Last-Name) -eq $C.odd_name)
+# a drone that an older version left with its own throttle curve (45 / 40) gets the builder's back
+Set-Content (Join-Path $data 'presets\THR.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc = New-FC 'aaaa11110000222233334444' 'THR20'
+$script:fc.rates.thr_mid = '45'; $script:fc.rates.thr_expo = '40'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) THR"; $o = Line $C.fix_ctl
+Check 'the old tool''s throttle curve is replaced by what the other rate profiles hold' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '100' -and $o.Contains('45 / 40 -> 100 / 100') -and (Val 'roll_srate') -eq '25')
+$script:fc = New-FC 'bbbb11110000222233334444' 'THR20'
+$script:fc.rates.thr_mid = '45'; $script:fc.rates.thr_expo = '40'
+$o = Line "$($C.bind) THR"; $o = Line $C.fix_ctl
+Check 'with the other profiles at firmware default it goes back to the default curve' ((Val 'thr_mid') -eq '50' -and (Val 'thr_expo') -eq '0')
+$script:fc = New-FC 'cccc11110000222233334444' 'THR20'
+$script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) THR"; $n0 = $script:sent.Count; $o = Line $C.fix_ctl
+Check 'a throttle curve the tool did not write is never touched' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '100' -and -not $o.Contains((T 'kv_thr_back')) -and -not (@($script:sent | Select-Object -Skip $n0) -match '^set thr_'))
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)

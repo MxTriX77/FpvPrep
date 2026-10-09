@@ -8,6 +8,7 @@ function New-FC([string]$id = '5150aaaa1111222233334444', [string]$craft = 'SIM2
     return @{
         id = $id; volts = 3381; cells = 8; flags = 'CLI'; cpu = 51; gyro = 'ICM42688P'; acc = 'ICM42688P'
         rpm = @(1200, 1195, 1188, 1210); escErr = @(0, 0, 0, 0); running = $false; beeps = $true
+        otherThr = $null   # thr_mid, thr_expo of rate profiles 1-3 when they are not at the default
         master = [ordered]@{ acc_calibration = '58,7,-6,1'; small_angle = '100'; dyn_idle_min_rpm = '0'; deadband = '0'; yaw_deadband = '0'
                              rc_smoothing_auto_factor = '30'; craft_name = $craft }
         profile = [ordered]@{ p_roll = '65'; i_roll = '20'; d_roll = '70'; d_min_roll = '60'; p_pitch = '60'; i_pitch = '20'; d_pitch = '65'; d_min_pitch = '60'
@@ -47,7 +48,18 @@ function Sim-FC([string[]]$commands, [bool]$save) {
                 $o += 'board_name STM32F405'; $o += "mcu_id $($fc.id)"; $o += ''
                 if (-not $fc.beeps) { $o += 'beeper -GYRO_CALIBRATED'; $o += 'beeper -RX_LOST' }
                 $o += '# master'; $o += "set craft_name = $($fc.master.craft_name)"; $o += ''
-                $o += 'rateprofile 0'; $o += "set roll_srate = $($fc.rates.roll_srate)"; $o += ''
+                # four rate profiles as a real board lists them: the active one (0), then three the
+                # console never writes to; a value equal to the firmware default is not listed
+                for ($n = 0; $n -lt 4; $n++) {
+                    $o += "rateprofile $n"; $o += ''; $o += "# rateprofile $n"
+                    if ($n -eq 0) {
+                        if ($fc.rates.thr_mid -ne '50') { $o += "set thr_mid = $($fc.rates.thr_mid)" }
+                        if ($fc.rates.thr_expo -ne '0') { $o += "set thr_expo = $($fc.rates.thr_expo)" }
+                        $o += "set roll_srate = $($fc.rates.roll_srate)"
+                    } elseif ($fc.otherThr) { $o += "set thr_mid = $($fc.otherThr[0])"; $o += "set thr_expo = $($fc.otherThr[1])" }
+                    $o += ''
+                }
+                $o += '# restore original rateprofile selection'; $o += 'rateprofile 0'; $o += ''
             }
             '^dump$' {
                 $o += '# master'; foreach ($k in $fc.master.Keys) { $o += "set $k = $($fc.master[$k])" }; $o += ''

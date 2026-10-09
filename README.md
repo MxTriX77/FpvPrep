@@ -10,12 +10,13 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 
 | Command | What it does |
 |---|---|
-| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before, how many stick settings match its type's. Writes nothing. NAME is whatever you call that kind of quad; no name = same as last time. |
+| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. Writes nothing. NAME is whatever you call that kind of quad; no name = same as last time. |
 | `status` | The drone's current rates, a health check, and a green / yellow / red verdict. Writes nothing. |
 | `motors [full]` | All four motors together, about 1 second at idle or 3 seconds. **Props off.** |
-| `fix controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |
-| `fix sound` (or `sound`) | Switches the buzzer and motor beacon off. |
-| `yaw more`, `pitch roll less`, `throttle slightly more` | Adjusts rates in fixed steps. Shows old and new values and asks before applying. A confirmed change is remembered for the quad type. |
+| `set controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, always in full, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |
+| `set sound` (or `sound`) | Switches the buzzer and motor beacon off. |
+| `set name NAME` | Changes the name the drone shows on its OSD. Latin letters, digits, space and `_ . -`, up to 16 characters. |
+| `yaw more`, `pitch roll less`, `roll slightly more` | Adjusts rates in fixed steps. Shows old and new values and writes them. The change is remembered for the quad type; the opposite word undoes it. |
 | `pid stiffer`, `pid softer` | Scales roll and pitch P, I and D together, 10 % of the drone's original values per step, from -2 to +3. Shows old and new values and a risk warning, and asks before applying. The level is remembered for the quad type. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |
 | `help`, `exit` | |
@@ -30,7 +31,11 @@ A PID worked out from assumed inertia and thrust lands a factor of 2-3 away from
 
 ## Safety limit
 
-`bf.ps1` refuses, before the port is opened, any command that could change switches, aux channels, adjustments, the channel map, receiver or failsafe settings, pin or resource mapping, servos, serial ports or features. It changes flight feel only: rates, PID, feedforward, throttle curve, stick smoothing and deadband, and beeps off.
+`bf.ps1` refuses, before the port is opened, any command that could change switches, aux channels, adjustments, the channel map, receiver or failsafe settings, pin or resource mapping, servos, serial ports or features. It changes flight feel only: rates, PID, feedforward, stick smoothing and deadband, the OSD name, and beeps.
+
+## Throttle is left alone
+
+The tool never writes a throttle curve and has no throttle command. How much power a quad has in hand cannot be worked out from the bench, its builder has usually shaped the throttle for it, and a pilot adapts to each quad's throttle stick. One exception: an early version wrote its own curve (`thr_mid 45`, `thr_expo 40`) into the active rate profile. Where `set controls` still finds exactly that pair, it puts back what the drone's other rate profiles hold.
 
 Every session ends with the flight controller restarting. That is how Betaflight leaves command-line mode.
 

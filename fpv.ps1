@@ -2,8 +2,9 @@
 #   bind "NAME"                 find the drone on USB and show what it is. Writes nothing.
 #   status                      full check: health and rates. Writes nothing.
 #   motors [full]               motor check, props off
-#   fix controls / fix sound    write the type's saved stick settings / switch beeps off
-#   yaw more, pitch roll less   adjust the bound drone, optionally remember for the type
+#   set controls / set sound    write the type's saved stick settings / switch beeps off
+#   set name X                  change the name the drone shows on its OSD
+#   yaw more, pitch roll less   adjust the bound drone; the change is remembered for the type
 # All text and command words come from lang\<Lang>.ps1; this file holds only the logic.
 # Every exchange with the drone goes through bf.ps1, which refuses anything about switches,
 # channels, receiver, failsafe or pins before the port is opened.
@@ -216,8 +217,24 @@ function Read-Drone([switch]$AfterReboot, [switch]$Health) {
     if ($actP -and $prof[$actP]) { foreach ($k in $prof[$actP].Keys) { $vals[$k] = $prof[$actP][$k] } }
     if ($actR -and $rate[$actR]) { foreach ($k in $rate[$actR].Keys) { $vals[$k] = $rate[$actR][$k] } }
 
+    # The throttle curve of every OTHER rate profile, from the diff (a value it does not list is the
+    # firmware default: mid 50, expo 0). Used to recover a curve an old version of this tool overwrote
+    # in the active profile.
+    $thr = @{}; $rp = $null; $actDiff = '0'; $restoring = $false
+    foreach ($line in ($diff -split "`r?`n")) {
+        $line = $line.Trim()
+        if ($line -match '^# restore original rateprofile') { $restoring = $true; continue }
+        if ($line -match '^rateprofile (\d+)$') {
+            if ($restoring) { $actDiff = $Matches[1]; $restoring = $false; $rp = $null } else { $rp = $Matches[1]; $thr[$rp] = @{ mid = '50'; expo = '0' } }
+            continue
+        }
+        if ($rp -and $line -match '^set thr_mid = (\d+)') { $thr[$rp].mid = $Matches[1] }
+        if ($rp -and $line -match '^set thr_expo = (\d+)') { $thr[$rp].expo = $Matches[1] }
+    }
+    $otherThr = @($thr.Keys | Where-Object { $_ -ne $actDiff } | ForEach-Object { "$($thr[$_].mid)/$($thr[$_].expo)" } | Sort-Object -Unique)
+
     return @{
-        head  = $head; diff = $diff; vals = $vals
+        head  = $head; diff = $diff; vals = $vals; otherThr = $otherThr
         id    = ([regex]::Match($diff, 'mcu_id (\w{8})')).Groups[1].Value
         craft = ([regex]::Match($diff, 'craft_name = (\S+)')).Groups[1].Value
         fw    = ([regex]::Match($diff, 'Betaflight / \S+ \(\S+\) (\S+)')).Groups[1].Value
@@ -238,8 +255,8 @@ function Write-Settings([string]$file, $add, [string[]]$header) {
     Set-Content $file ($cur + @($add.Keys | ForEach-Object { "set $_ = $($add[$_])" })) -Encoding utf8
 }
 function Pairs($h) { return (($h.Keys | ForEach-Object { "$_=$($h[$_])" }) -join '; ') }
-function Save-Preset([string]$name, $add, [string]$craft) {
-    $h = @("# Saved settings for '$name'. Created by FPV PREP on $(Get-Date -Format 'yyyy-MM-dd')."); if ($craft) { $h += "# craft: $craft" }
+function Save-Preset([string]$name, $add) {
+    $h = @("# Saved settings for '$name'. Created by FPV PREP on $(Get-Date -Format 'yyyy-MM-dd').")
     $file = Join-Path $presets "$name.txt"
     if (-not (Test-Path $file)) {
         # a new type starts from the standard set, so its file is complete on its own
@@ -261,20 +278,10 @@ function Wanted([string]$name, [string]$id) {
     return @{ want = $want; own = $o; hasPreset = (Test-Path $src); std = $std }
 }
 # A confirmed change always becomes part of the type's saved settings: no question asked
-function Remember([string]$name, [string]$id, [string]$craft, $add) {
-    Save-Preset $name $add $craft
+function Remember([string]$name, $add) {
+    Save-Preset $name $add
     Ok (T 'ok_remembered' $name.ToUpper())
 }
-# The preset remembers what its drones call themselves ("# craft: X"). Without that line,
-# fall back to "the drone's own name starts with NAME".
-function Craft-Matches([string]$name, [string]$craft) {
-    $file = Join-Path $presets "$name.txt"
-    if (-not (Test-Path $file)) { return $true }
-    $want = (Get-Content $file -Encoding UTF8 | Select-String -Pattern '^# craft:\s*(\S+)' | Select-Object -First 1)
-    if ($want) { return ($craft -eq $want.Matches[0].Groups[1].Value) }
-    return ($craft -like "$name*")
-}
-
 # Writes a set of values (plus extra raw commands), then reads back. True when all are in.
 function Write-And-Verify([string]$name, [string]$id, $set, [string[]]$more) {
     $cmds = @($set.Keys | ForEach-Object { "set $_ = $($set[$_])" }) + @($more)
@@ -449,7 +456,10 @@ function Do-Bind([string]$rest) {
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $seen = @(Get-ChildItem $quads -Filter "*_${id}_*").Count -gt 0
-    Set-Content (Join-Path $quads "$(Get-Date -Format 'yyyy-MM-dd')_${name}_${id}_before.txt") $d.diff -Encoding utf8
+    # the first copy of a drone is the record of how it arrived; a later bind must not overwrite it
+    if (-not @(Get-ChildItem $quads -Filter "*_${id}_before.txt").Count) {
+        Set-Content (Join-Path $quads "$(Get-Date -Format 'yyyy-MM-dd')_${name}_${id}_before.txt") $d.diff -Encoding utf8
+    }
     Set-Content (Join-Path $quads 'last.txt') $name -Encoding utf8
     $script:cur = @{ id = $id; name = $name; craft = $d.craft }
 
@@ -457,7 +467,6 @@ function Do-Bind([string]$rest) {
     Kv (T 'kv_craft') $d.craft
     Kv (T 'kv_fw') $d.fw
     if ($seen) { Kv (T 'kv_seen') (T 'seen_yes') 'Yellow' } else { Kv (T 'kv_seen') (T 'seen_no') }
-    if (-not (Craft-Matches $name $d.craft)) { Warn (T 'w_craft' $d.craft $NAME) }
     if ($r.free.Count) { Note (T 'n_skipped' ($r.free -join ' ')) }
     if ($r.motor -ne 'none') { Note (T 'n_bindmotor') }
     Log "$name $id bind"
@@ -465,9 +474,10 @@ function Do-Bind([string]$rest) {
     Bar (T 'b_bound' "$NAME $id" (Took $clock)) 'Green'
 }
 
-# ---------------------------------------------------------------- fix
-# fix controls: write the type's saved stick settings (plus this drone's own tweaks).
-# fix sound: switch the buzzer and the motor beacon off. Both can be asked at once.
+# ---------------------------------------------------------------- set
+# set controls: write the type's saved stick settings (plus this drone's own tweaks).
+# set sound: switch the buzzer and the motor beacon off. Both can be asked at once.
+# set name X: see Do-Name. ("fix" is still accepted as the old word for "set".)
 function Do-Fix([string]$rest) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $low = $rest.ToLower()
@@ -491,23 +501,30 @@ function Do-Fix([string]$rest) {
     if ($ctl) {
         $w = Wanted $name $id
         if (-not $w.hasPreset) { Fail (T 'f_nopreset' $NAME); return }
-        if (-not (Craft-Matches $name $d.craft)) {
-            Warn (T 'w_craft' $d.craft $NAME)
-            if (-not (Ask (T 'q_anyway' $NAME))) { Note (T 'n_nothing'); Log "$name $id REFUSED craft=$($d.craft)"; return }
+        # Always written in full, whether or not the drone already has the values: the command is
+        # the decision (user, 2026-10-09: "write and apply rates regardless").
+        foreach ($k in $w.want.Keys) { $todo[$k] = $w.want[$k] }
+        # A version of this tool up to 2026-10-09 wrote its own throttle curve (mid 45, expo 40) over
+        # the builder's, in the active rate profile only. Where that exact pair is still in the
+        # drone and nothing saved says otherwise, put back what its other rate profiles hold.
+        if ("$($d.vals['thr_mid'])" -eq '45' -and "$($d.vals['thr_expo'])" -eq '40' -and -not $todo.Contains('thr_mid') -and -not $todo.Contains('thr_expo')) {
+            if ($d.otherThr.Count -eq 1 -and $d.otherThr[0] -ne '45/40') {
+                $mid, $expo = $d.otherThr[0] -split '/'
+                $todo['thr_mid'] = $mid; $todo['thr_expo'] = $expo
+                Kv (T 'kv_thr_back') "45 / 40 -> $mid / $expo" 'Yellow'
+            } else { Warn (T 'w_thr_unknown') }
         }
-        foreach ($k in $w.want.Keys) { if ("$($d.vals[$k])" -ne "$($w.want[$k])") { $todo[$k] = $w.want[$k] } }
         $level = Stiff-Level $name
         if ($level -ne 0 -and $null -ne $d.vals['p_roll']) {
             $pw = Pid-Wanted (Pid-Base $d) $level
-            foreach ($k in $pw.Keys) { if ("$($d.vals[$k])" -ne "$($pw[$k])") { $todo[$k] = $pw[$k] } }
+            foreach ($k in $pw.Keys) { $todo[$k] = $pw[$k] }
             Kv (T 'kv_level') (Signed $level) 'Yellow'
         }
-        if ($todo.Count) { Step (T 's_ctl' $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" } }
+        Step (T 's_ctl' $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" }
     }
     $sound = @(); if ($snd) { $sound = @('beeper -ALL', 'beacon -RX_LOST', 'beacon -RX_SET'); Step (T 's_snd') -Plain }
 
-    $done = @(); if ($todo.Count) { $done += (T 'done_ctl') }; if ($snd) { $done += (T 'done_snd') }
-    if (-not $done.Count) { Write-Host ''; Bar (T 'b_nofix' "$NAME $id") 'Green'; return }
+    $done = @(); if ($ctl) { $done += (T 'done_ctl') }; if ($snd) { $done += (T 'done_snd') }
     $ok = Write-And-Verify $name $id $todo $sound
     Log "$name $id fix $($done -join '+') ok=$ok"
     Write-Host ''
@@ -515,9 +532,37 @@ function Do-Fix([string]$rest) {
     else { Bar (T 'b_problems') 'Yellow' }
 }
 
-# ---------------------------------------------------------------- yaw / pitch / roll / throttle  more / less
-# Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40, throttle expo 10.
+# set name X: change the name the drone shows on its OSD (Betaflight's craft_name).
+# Plain Latin only, because that is all the OSD font has; 16 characters is the firmware's limit.
+function Do-Name([string]$new) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $new = $new.Trim().Trim('"').Trim()
+    if (-not $new) { Note (T 'n_namewhat'); return }
+    Rule (T 'r_name')
+    if ($new.Length -gt 16 -or $new -notmatch '^[A-Za-z0-9 _.\-]+$') { Fail (T 'f_badname'); return }
+    if (-not (Acquire)) { return }
+    Step (T 's_readdrone')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    Kv (T 'kv_osdname') "$($d.craft) -> $new"
+    $pos = $d.vals['osd_craft_name_pos']
+    if ($null -ne $pos -and (([int]$pos) -band 0x3800) -eq 0) { Warn (T 'w_name_hidden') }
+    $type = Name-For $id; if (-not $type) { $type = 'drone' }
+    if (-not (Write-And-Verify $type $id ([ordered]@{ craft_name = $new }) @())) {
+        Log "$id name NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    if ($script:cur -and $script:cur.id -eq $id) { $script:cur.craft = $new }
+    Log "$id name '$($d.craft)' -> '$new'"
+    Write-Host ''
+    Bar (T 'b_named' "$new $id" (Took $clock)) 'Green'
+}
+# ---------------------------------------------------------------- yaw / pitch / roll  more / less
+# Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40.
 # $scale halves or doubles them. Only for drones whose rates are in the ACTUAL format.
+# Throttle is not an axis here: the pilot adapts to each drone's throttle stick, and its curve
+# belongs to the builder (user, 2026-10-09).
 function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_more'); if ($dir -lt 0) { $word = (T 'w_less') }
@@ -535,15 +580,6 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
 
     $plan = [ordered]@{}
     foreach ($a in $axes) {
-        if ($a -eq 'throttle') {
-            # more throttle = sharper = less expo around the middle
-            if ($null -eq $d.vals['thr_expo']) { Fail (T 'f_nothr'); return }
-            $old = [int]$d.vals['thr_expo']; $step = [Math]::Max(1, [int][Math]::Round(10 * $scale))
-            $new = [Math]::Min(100, [Math]::Max(0, $old - $dir * $step))
-            $how = (T 'thr_sharper'); if ($dir -lt 0) { $how = (T 'thr_softer') }
-            if ($new -eq $old) { Note (T 'n_limit' (T 'ax_throttle').ToLower()) } else { $plan['thr_expo'] = $new; Kv (T 'kv_thr') "$old -> $new  ($how)" }
-            continue
-        }
         if ($null -eq $d.vals["${a}_rc_rate"] -or $null -eq $d.vals["${a}_srate"]) { Fail (T 'f_noaxis' $a); return }
         $base = 3; if ($a -eq 'yaw') { $base = 4 }
         $c0 = [int]$d.vals["${a}_rc_rate"]; $m0 = [int]$d.vals["${a}_srate"]
@@ -562,7 +598,7 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
         Log "$name $id tune NOT CONFIRMED"
         Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
     }
-    Remember $name $id $d.craft $plan
+    Remember $name $plan
     Log "$name $id tune $(Pairs $plan)"
     Write-Host ''
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
@@ -595,9 +631,9 @@ function Stiff-Level([string]$name) {
     if (Test-Path $file) { $m = (Get-Content $file -Encoding UTF8 | Select-String -Pattern '^# stiffness:\s*(-?\d+)' | Select-Object -First 1); if ($m) { return [int]$m.Matches[0].Groups[1].Value } }
     return 0
 }
-function Set-Stiff-Level([string]$name, [int]$level, [string]$craft) {
+function Set-Stiff-Level([string]$name, [int]$level) {
     $file = Join-Path $presets "$name.txt"
-    if (-not (Test-Path $file)) { Save-Preset $name ([ordered]@{}) $craft }
+    if (-not (Test-Path $file)) { Save-Preset $name ([ordered]@{}) }
     $cur = @(Get-Content $file -Encoding UTF8 | Where-Object { $_ -notmatch '^# stiffness:' })
     $head = @($cur | Where-Object { $_ -match '^#' }); $rest = @($cur | Where-Object { $_ -notmatch '^#' })
     Set-Content $file ($head + "# stiffness: $level" + $rest) -Encoding utf8
@@ -638,7 +674,7 @@ function Do-Stiff([int]$dir) {
         Log "$name $id stiffness NOT CONFIRMED"
         Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
     }
-    Set-Stiff-Level $name $new $d.craft
+    Set-Stiff-Level $name $new
     Ok (T 'ok_remembered' $NAME)
     Write-Host ''
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
@@ -668,7 +704,6 @@ function Do-Status {
     if ("$($d.vals['rates_type'])" -eq 'ACTUAL') {
         foreach ($a in 'roll', 'pitch', 'yaw') { Kv (T 'kv_rates' (T "ax_$a").ToLower()) "$([int]$d.vals["${a}_rc_rate"] * 10) / $([int]$d.vals["${a}_srate"] * 10) $(T 'unit_dps')" }
     } else { Kv (T 'kv_ratefmt') "$($d.vals['rates_type'])" 'Yellow' }
-    Kv (T 'kv_thr') "$($d.vals['thr_expo'])"
     $sev = Health $d
     Log "$who status sev=$sev"
     Verdict $sev $who (T 'good_status') $clock
@@ -709,8 +744,11 @@ function Dispatch([string]$line) {
     try {
         if (-not $low) { return }
         if ($low -match $script:STR['rx_bind']) { Do-Bind $line.Trim().Substring($Matches[0].Length) }
-        elseif ($low -match $script:STR['rx_fix']) { Do-Fix $line.Trim().Substring($Matches[0].Length) }
-        elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "fix"
+        elseif ($low -match $script:STR['rx_fix']) {
+            $rest = $line.Trim().Substring($Matches[0].Length)
+            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } else { Do-Fix $rest }
+        }
+        elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {
             # checked before the axis words, so "pid softer" is never read as an axis command
             $rest = $low.Substring($Matches[0].Length)
@@ -721,7 +759,7 @@ function Dispatch([string]$line) {
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {
             $axes = @()
-            foreach ($a in 'yaw', 'pitch', 'roll', 'throttle') { if ($low -match $script:STR["rx_$a"]) { $axes += $a } }
+            foreach ($a in 'yaw', 'pitch', 'roll') { if ($low -match $script:STR["rx_$a"]) { $axes += $a } }
             $dir = 0
             if ($low -match $script:STR['rx_more']) { $dir = 1 } elseif ($low -match $script:STR['rx_less']) { $dir = -1 }
             $scale = 1.0
