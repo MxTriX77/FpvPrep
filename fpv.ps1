@@ -722,6 +722,143 @@ function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
 }
 
+# ---------------------------------------------------------------- set controls -m: rates by hand
+# A full-screen editor over the console (the alternate screen, so what was on screen comes back
+# when it closes). It opens on the values the drone holds now. Up/down move between values,
+# digits type, left/right step a value or switch where it is written: this drone only, or this
+# drone and the type's profile. Enter writes, Esc leaves without writing.
+# Edit-Screen is the keyboard part alone, so tests can stand in for it.
+function Edit-Screen($fields, [string]$who, [string]$NAME) {
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $null }
+    try {
+        Add-Type -Namespace FpvPrep -Name Vt -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);' -ErrorAction SilentlyContinue
+        $hOut = [FpvPrep.Vt]::GetStdHandle(-11); $mode = 0; [void][FpvPrep.Vt]::GetConsoleMode($hOut, [ref]$mode); [void][FpvPrep.Vt]::SetConsoleMode($hOut, $mode -bor 4)
+    } catch { }
+    $esc = [char]27; $row = 0; $fresh = $true; $toProfile = $true; $msg = ''; $result = $null
+    $fg = [Console]::ForegroundColor; $bg = [Console]::BackgroundColor
+    [Console]::Write("$esc[?1049h$esc[2J"); [Console]::CursorVisible = $false
+    try {
+        while ($true) {
+            [Console]::SetCursorPosition(0, 0)
+            $put = { param([string]$text, [string]$color = 'Gray', [switch]$Sel)
+                [Console]::ForegroundColor = $color; if ($Sel) { [Console]::BackgroundColor = 'DarkCyan'; [Console]::ForegroundColor = 'White' }
+                [Console]::Write($text); [Console]::BackgroundColor = $bg }
+            $end = { [Console]::Write("$esc[K`n") }
+            & $end
+            & $put "  $(T 'ed_title')" 'White'; & $put "  //  $who" 'Cyan'; & $end
+            & $put ('  ' + ('-' * $WIDTH)) 'DarkGray'; & $end; & $end
+            # the row being edited: a marker in front, a lit box, and the real cursor after its digits
+            $curX = -1; $curY = 0
+            for ($i = 0; $i -lt $fields.Count; $i++) {
+                $f = $fields[$i]; $here = ($i -eq $row)
+                if ($i -gt 0 -and $f.group -ne $fields[$i - 1].group) { & $end }
+                if ($here) { & $put '  >> ' 'Yellow'; & $put ("{0,-28}" -f $f.label) 'White' } else { & $put ("     {0,-28}" -f $f.label) 'Gray' }
+                if ($here) {
+                    & $put '[' 'Yellow'; & $put (" {0,4}" -f $f.text) 'White' -Sel
+                    $curX = [Console]::CursorLeft; $curY = [Console]::CursorTop
+                    & $put ' ' 'White' -Sel; & $put ']' 'Yellow'
+                    & $put " $($f.unit)" 'Gray'; & $put "   $(T 'ed_range' $f.min $f.max)" 'DarkGray'
+                } else { & $put ("[ {0,4} ]" -f $f.text) 'Cyan'; & $put " $($f.unit)" 'DarkGray' }
+                & $end
+            }
+            & $end
+            # where to write: two choices side by side, the chosen one marked
+            $here = ($row -eq $fields.Count)
+            if ($here) { & $put '  >> ' 'Yellow'; & $put ("{0,-28}" -f (T 'ed_target')) 'White' } else { & $put ("     {0,-28}" -f (T 'ed_target')) 'Gray' }
+            foreach ($opt in @(@($true, (T 'ed_profile' $NAME)), @($false, (T 'ed_drone')))) {
+                $on = ($opt[0] -eq $toProfile); $mark = '( )'; if ($on) { $mark = '(*)' }
+                if ($on -and $here) { & $put "$mark $($opt[1])" 'White' -Sel } elseif ($on) { & $put "$mark $($opt[1])" 'Yellow' } else { & $put "$mark $($opt[1])" 'DarkGray' }
+                & $put '    '
+            }
+            & $end; & $end
+            & $put "     $msg" 'Red'; & $end; & $end
+            & $put ('  ' + ('-' * $WIDTH)) 'DarkGray'; & $end
+            & $put "  $(T 'ed_keys')" 'DarkGray'; & $end
+            [Console]::Write("$esc[J")
+            if ($curX -ge 0) { [Console]::SetCursorPosition($curX, $curY); [Console]::CursorVisible = $true } else { [Console]::CursorVisible = $false }
+
+            $k = [Console]::ReadKey($true); $msg = ''
+            $onField = $row -lt $fields.Count
+            $code = [int]$k.KeyChar   # typed-in keys can arrive as a character with no key name
+            if ($k.Key -eq 'Escape' -or $code -eq 27) { break }
+            if ($k.Key -eq 'Enter' -or $code -eq 13 -or ($k.Key -eq 'S' -and ($k.Modifiers -band [ConsoleModifiers]::Control))) {
+                $msg = Edit-Check $fields
+                if (-not $msg) { $result = @{ toProfile = $toProfile }; break }
+                continue
+            }
+            if ($k.Key -eq 'UpArrow') { $row = ($row + $fields.Count) % ($fields.Count + 1); $fresh = $true; continue }
+            if ($k.Key -eq 'DownArrow' -or $k.Key -eq 'Tab' -or $code -eq 9) { $row = ($row + 1) % ($fields.Count + 1); $fresh = $true; continue }
+            if ($k.Key -eq 'LeftArrow' -or $k.Key -eq 'RightArrow') {
+                $sign = 1; if ($k.Key -eq 'LeftArrow') { $sign = -1 }
+                if (-not $onField) { $toProfile = -not $toProfile; continue }
+                $f = $fields[$row]; $v = 0; [void][int]::TryParse($f.text, [ref]$v)
+                $f.text = "$([Math]::Min($f.max, [Math]::Max($f.min, $v + $sign * $f.step)))"; $fresh = $true; continue
+            }
+            if ($onField -and $k.Key -eq 'Backspace') { $f = $fields[$row]; if ($f.text.Length) { $f.text = $f.text.Substring(0, $f.text.Length - 1) }; $fresh = $false; continue }
+            if ($onField -and $k.KeyChar -match '^\d$') {
+                $f = $fields[$row]; if ($fresh) { $f.text = '' }
+                if ($f.text.Length -lt 4) { $f.text += $k.KeyChar }; $fresh = $false; continue
+            }
+        }
+    } finally {
+        [Console]::ForegroundColor = $fg; [Console]::BackgroundColor = $bg
+        [Console]::CursorVisible = $true; [Console]::Write("$esc[?1049l")
+    }
+    return $result
+}
+# '' when every value is usable, else what is wrong with the first one that is not
+function Edit-Check($fields) {
+    foreach ($f in $fields) {
+        $v = 0
+        if (-not [int]::TryParse($f.text, [ref]$v) -or $v -lt $f.min -or $v -gt $f.max) { return (T 'ed_bad' $f.label $f.min $f.max) }
+    }
+    foreach ($a in 'roll', 'pitch', 'yaw') {
+        $c = $fields | Where-Object { $_.key -eq "${a}_rc_rate" }; $m = $fields | Where-Object { $_.key -eq "${a}_srate" }
+        if ([int]$m.text -le [int]$c.text) { return (T 'ed_bad_full' $m.label) }
+    }
+    return ''
+}
+function Do-Edit {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Rule (T 'r_edit')
+    if (-not (Acquire)) { return }
+    Step (T 's_readrates')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $name = Name-For $id
+    if (-not $name) { Fail (T 'f_unknown'); return }
+    $NAME = $name.ToUpper()
+    Kv (T 'kv_drone') "$NAME $id"
+    if ("$($d.vals['rates_type'])" -ne 'ACTUAL') { Fail (T 'f_notactual' $d.vals['rates_type']); return }
+    $fields = @()
+    foreach ($a in 'roll', 'pitch', 'yaw') {
+        $label = (T "ax_$a").ToLower()
+        if ($null -eq $d.vals["${a}_rc_rate"] -or $null -eq $d.vals["${a}_srate"] -or $null -eq $d.vals["${a}_expo"]) { Fail (T 'f_noaxis' $a); return }
+        # rates are stored in tens of degrees a second and shown in degrees a second
+        $fields += @{ key = "${a}_rc_rate"; group = $a; label = (T 'kv_centre' $label); unit = (T 'unit_dps'); mul = 10; step = 10; min = 10; max = 500; text = "$([int]$d.vals["${a}_rc_rate"] * 10)" }
+        $fields += @{ key = "${a}_srate"; group = $a; label = (T 'kv_full' $label); unit = (T 'unit_dps'); mul = 10; step = 10; min = 20; max = 1000; text = "$([int]$d.vals["${a}_srate"] * 10)" }
+        $fields += @{ key = "${a}_expo"; group = $a; label = (T 'ed_expo' $label); unit = ''; mul = 1; step = 5; min = 0; max = 100; text = "$([int]$d.vals["${a}_expo"])" }
+    }
+    $r = Edit-Screen $fields "$NAME $id" $NAME
+    if ($null -eq $r) { Note (T 'n_nothing'); return }
+    $plan = [ordered]@{}
+    foreach ($f in $fields) {
+        $v = [int][Math]::Round([int]$f.text / $f.mul)
+        $shown = "$([int]$d.vals[$f.key] * $f.mul)"; $now = "$($v * $f.mul)"
+        $plan[$f.key] = $v
+        if ($shown -ne $now) { Kv $f.label "$shown -> $now $($f.unit)".TrimEnd() }
+    }
+    $script:cur = @{ id = $id; name = $name; craft = $d.craft }
+    if (-not (Write-And-Verify $name $id $plan @())) {
+        Log "$name $id edit NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    if ($r.toProfile) { Remember $name $plan } else { Ok (T 'ok_drone_only') }
+    Log "$name $id edit profile=$($r.toProfile) $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
+}
 # ---------------------------------------------------------------- throttle softer / sharper
 # "Softer" has one meaning (user, 2026-10-10): softer when the stick is worked at lift-off AND in
 # flight. Betaflight's throttle has no sensitivity setting of its own: how much power a small
@@ -972,7 +1109,7 @@ function Dispatch([string]$line) {
         if ($low -match $script:STR['rx_bind']) { Do-Bind $line.Trim().Substring($Matches[0].Length) }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
+            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and $rest.ToLower() -match '(^|\s)-m(\s|$)') { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
         }
         elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {

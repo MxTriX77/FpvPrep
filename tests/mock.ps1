@@ -6,7 +6,9 @@
 # Expects fpv.ps1 one folder up and simfc.ps1 beside this file (true in tests\ and in a build).
 # (the parameter is -Lines, not -Run: dot-sourcing fpv.ps1 below resets its own $Run here)
 # -Plain: show nothing that marks it as a mock; the start screen is then the real one's.
-param([string]$Lang = 'en', [string]$Lines, [switch]$Plain)
+# -Intro "line ;; line": commands shown as already typed and run before the prompt appears.
+# -Quiet "line ;; line": commands run before anything is shown, with nothing on screen.
+param([string]$Lang = 'en', [string]$Lines, [switch]$Plain, [string]$Intro, [string]$Quiet)
 
 $ErrorActionPreference = 'Stop'
 $base = Split-Path $PSScriptRoot
@@ -50,6 +52,12 @@ function Mock-Line([string]$line) {
     Dispatch $line
 }
 
+if ($Quiet) {
+    # no animation and no waiting for the pretend drone to restart: the window must not sit blank
+    $was = $fancy; $fancy = $false; $busy0 = ${function:Busy}; function Busy([int]$ms) { }
+    foreach ($l in ($Quiet -split '\s*;;\s*')) { Mock-Line $l 6>$null }
+    $fancy = $was; ${function:Busy} = $busy0
+}
 if ($Lines) { foreach ($l in ($Lines -split '\s*;;\s*')) { Mock-Line $l }; return }
 Clear-Host
 Banner
@@ -63,6 +71,7 @@ Write-Host ''
 Write-Host "$IND$(T 'warn_bf')" -ForegroundColor Yellow
 Note (T 'note_help')
 Write-Host ''
+if ($Intro) { foreach ($l in ($Intro -split '\s*;;\s*')) { Write-Host '  FPV' -ForegroundColor Cyan -NoNewline; Write-Host ':\> ' -ForegroundColor Green -NoNewline; Write-Host $l; Mock-Line $l } }
 while ($true) {
     Write-Host '  FPV' -ForegroundColor Cyan -NoNewline
     Write-Host ':\> ' -ForegroundColor Green -NoNewline

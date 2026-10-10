@@ -176,6 +176,19 @@
     ok_remembered = 'remembered for every {0}.'
     b_done = '{0}  //  DONE  //  {1}'
 
+    # ---- set controls -m: the editor
+    r_edit = 'SET  //  CONTROLS BY HAND'
+    ed_title = 'CONTROLS BY HAND'
+    ed_expo = '{0}, expo'
+    ed_target = 'write to'
+    ed_drone = 'this drone only'
+    ed_profile = 'this drone + profile {0}'
+    ed_keys = 'up/down move   digits type   left/right change   Enter save   Esc cancel'
+    ed_range = '{0} to {1}'
+    ed_bad = '{0}: must be {1} to {2}'
+    ed_bad_full = '{0}: must be above near centre'
+    ok_drone_only = 'written to this drone only.'
+
     # ---- throttle softer / throttle sharper
     rx_thr = '^(throttle|thr)(\s+|$)'
     rx_thr_softer = '\b(softer|soften)\b'
@@ -216,7 +229,7 @@
         @('status', 'check the drone'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
-        @('set controls', 'write the stick settings'),
+        @('set controls [ -m ]', 'write the stick settings; -m: type the rates by hand'),
         @('set sound [ on | off ]', 'the beeper'),
         @('set sticks [ on | off ]', 'stick pictures on the OSD'),
         @('set horizon [ on | off ]', 'horizon line on the OSD'),
@@ -236,6 +249,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

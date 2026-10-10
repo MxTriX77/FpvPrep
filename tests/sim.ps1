@@ -327,6 +327,32 @@ Check 'set controls gives the next drone of the type its horizon' ((Val 'osd_ah_
 $o = Line $C.hor_off
 Check 'set horizon off hides it' ((Val 'osd_ah_pos') -eq '206' -and (Preset 'HOR') -match '# horizon: off')
 
+# ---------------------------------------------------------------- set controls -m: rates by hand
+# the keyboard part is stood in for: it types new values into the fields and says where to write
+$script:typed = @{}; $script:toProfile = $true; $script:opened = $null
+function Edit-Screen($fields, [string]$who, [string]$NAME) {
+    $script:opened = @($fields | ForEach-Object { "$($_.key)=$($_.text)" })
+    if ($script:typed.Contains('cancel')) { return $null }
+    foreach ($f in $fields) { if ($script:typed.Contains($f.key)) { $f.text = $script:typed[$f.key] } }
+    return @{ toProfile = $script:toProfile }
+}
+Set-Content (Join-Path $data 'presets\EDT.txt') -Encoding utf8 -Value @('# rates only', 'set yaw_srate = 24')
+$script:fc = New-FC 'cccc33330000222233334444' 'EDT20'
+$o = Line "$($C.bind) EDT"
+$script:typed = @{ roll_rc_rate = '60'; roll_srate = '300'; roll_expo = '35' }; $script:toProfile = $false
+$o = Line $C.edit
+Check 'the editor opens on what the drone holds now' ($script:opened -contains 'roll_rc_rate=70' -and $script:opened -contains 'yaw_srate=150' -and $script:opened -contains 'pitch_expo=0' -and $script:opened.Count -eq 9)
+Check 'typed values are written and read back' ((Val 'roll_rc_rate') -eq '6' -and (Val 'roll_srate') -eq '30' -and (Val 'roll_expo') -eq '35' -and (Val 'yaw_srate') -eq '15' -and $o.Contains('70 -> 60') -and $o.Contains((T 'ok_confirmed' 9)))
+Check 'drone only: the profile is left as it was' ((Has $o 'ok_drone_only') -and -not ((Preset 'EDT') -match 'roll_srate'))
+$script:typed = @{ yaw_srate = '260' }; $script:toProfile = $true
+$o = Line $C.edit
+Check 'drone and profile: the values go into the type''s file too' ((Val 'yaw_srate') -eq '26' -and (Preset 'EDT') -match 'set yaw_srate = 26' -and (Preset 'EDT') -match 'set roll_srate = 30')
+$script:typed = @{ cancel = 1 }; $before = $script:saves
+$o = Line $C.edit
+Check 'leaving the editor without saving writes nothing' ($script:saves -eq $before -and (Has $o 'n_nothing'))
+$chk = @(@{ key = 'roll_rc_rate'; label = 'a'; min = 10; max = 500; text = '300' }, @{ key = 'roll_srate'; label = 'b'; min = 20; max = 1000; text = '200' }, @{ key = 'pitch_rc_rate'; label = 'c'; min = 10; max = 500; text = '50' }, @{ key = 'pitch_srate'; label = 'd'; min = 20; max = 1000; text = '220' }, @{ key = 'yaw_rc_rate'; label = 'e'; min = 10; max = 500; text = '80' }, @{ key = 'yaw_srate'; label = 'f'; min = 20; max = 1000; text = '240' })
+Check 'full stick below near centre is refused, and so is a value out of range' ((Edit-Check $chk) -eq (T 'ed_bad_full' 'b') -and (& { $chk[0].text = '5'; Edit-Check $chk }) -eq (T 'ed_bad' 'a' 10 500))
+
 # ---------------------------------------------------------------- the direction word more than once
 Set-Content (Join-Path $data 'presets\TWO.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
 $script:fc = New-FC 'cccc22220000222233334444' 'TWO20'
