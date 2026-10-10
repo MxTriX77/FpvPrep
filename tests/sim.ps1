@@ -39,6 +39,7 @@ function Line([string]$text, [string[]]$answers = @()) {
     if ($Show) { Write-Host $t }
     return $t
 }
+$script:bindWrites = $false   # most checks need the drone as it arrived; the last ones switch it back on
 $script:pass = 0; $script:fail = 0
 function Check([string]$what, [bool]$ok) {
     if ($ok) { $script:pass++; if ($Show) { Write-Host "  pass  $what" -ForegroundColor Green } }
@@ -378,6 +379,15 @@ $o = Line (Again $C.pid_stiffer 2) @('y')
 Check 'pid stiffer stiffer is two levels at once' ((Val 'p_roll') -eq '78' -and (Preset 'TWO') -match '# stiffness: 2')
 $o = Line (Again $C.pid_stiffer 4) @('y')
 Check 'more words than there are levels left stops at the last level' ((Val 'p_roll') -eq '85' -and (Preset 'TWO') -match '# stiffness: 3')
+# ---------------------------------------------------------------- bind goes straight on to set controls
+$script:bindWrites = $true
+Set-Content (Join-Path $data 'presets\GO.txt') -Encoding utf8 -Value @('# rates', 'set roll_srate = 27', 'set yaw_srate = 31')
+$script:fc = New-FC 'ffff33330000222233334444' 'GO20'
+$before = $script:saves; $o = Line "$($C.bind) GO"
+Check 'bind shows the drone, then writes the type''s settings and confirms them' ((Val 'roll_srate') -eq '27' -and (Val 'yaw_srate') -eq '31' -and $script:saves -eq $before + 1 -and $o.Contains(((T 'b_bound') -f 'GO ffff3333', '').Substring(0, 18)) -and $o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'ok_confirmed' 2)))
+Check 'the copy of how the drone arrived is taken before anything is written' ((Get-Content (Get-ChildItem (Join-Path $data 'quads') -Filter '*_ffff3333_before.txt').FullName -Raw) -match 'set roll_srate = 15')
+$script:bindWrites = $false
+
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)

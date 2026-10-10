@@ -10,7 +10,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 
 | Command | What it does |
 |---|---|
-| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. Writes nothing. NAME is whatever you call that kind of quad; no name = same as last time. |
+| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. It saves a copy of the drone as it arrived, then goes straight on to `set controls`. NAME is whatever you call that kind of quad; no name = same as last time. |
 | `status` | The drone's current rates, a health check, and a green / yellow / red verdict. Writes nothing. |
 | `motors`, `motors -N` | All four motors together at idle speed, for about 1 second or N seconds (up to 10). It runs the same with props on or off. With props on, keep hands and the USB cable clear: if the cable comes out mid-run the stop command cannot reach the drone, and only the battery plug stops the motors. |
 | `set controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, always in full, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |

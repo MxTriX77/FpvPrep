@@ -225,7 +225,7 @@
     # ---- help: two items = command and what it does, one item = a note, none = blank line
     r_help = 'COMMANDS'
     help = @(
-        @('bind "NAME"', 'find the drone on USB'),
+        @('bind "NAME"', 'find the drone on USB and write its stick settings'),
         @('status', 'check the drone'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),

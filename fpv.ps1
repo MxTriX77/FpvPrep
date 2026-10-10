@@ -448,6 +448,7 @@ function Acquire {
 # ---------------------------------------------------------------- bind
 # Find the drone on USB and show what it is. Nothing more: the check is "status", and nothing
 # is written to the drone.
+$script:bindWrites = $true   # tests switch this off where they need a drone left as it arrived
 function Do-Bind([string]$rest) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $r = Parse-Target $rest
@@ -479,6 +480,8 @@ function Do-Bind([string]$rest) {
     Log "$name $id bind"
     Write-Host ''
     Bar (T 'b_bound' "$NAME $id" (Took $clock)) 'Green'
+    # prep is always bind and then set controls, so bind goes straight on to it (user, 2026-10-10)
+    if ($script:bindWrites) { Do-Fix '*controls' }
 }
 
 # ---------------------------------------------------------------- set
@@ -488,7 +491,7 @@ function Do-Bind([string]$rest) {
 function Do-Fix([string]$rest) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $low = $rest.ToLower()
-    $ctl = $low -match $script:STR['rx_ctl']; $snd = $low -match $script:STR['rx_snd']
+    $ctl = ($low -match $script:STR['rx_ctl']) -or $rest -eq '*controls'; $snd = $low -match $script:STR['rx_snd']
     if (-not ($ctl -or $snd)) { Note (T 'n_fixwhat'); return }
     $what = @(); if ($ctl) { $what += (T 'w_ctl') }; if ($snd) { $what += (T 'w_snd') }
 
