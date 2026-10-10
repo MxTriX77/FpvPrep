@@ -820,7 +820,8 @@ function Edit-Check($fields) {
     }
     return ''
 }
-function Do-Edit {
+# $only: the axes to show (yaw -m, pitch roll -m); none = all three (set controls -m)
+function Do-Edit([string[]]$only = @()) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_edit')
     if (-not (Acquire)) { return }
@@ -835,6 +836,7 @@ function Do-Edit {
     if ("$($d.vals['rates_type'])" -ne 'ACTUAL') { Fail (T 'f_notactual' $d.vals['rates_type']); return }
     $fields = @()
     foreach ($a in 'roll', 'pitch', 'yaw') {
+        if ($only.Count -and $only -notcontains $a) { continue }
         $label = (T "ax_$a").ToLower()
         if ($null -eq $d.vals["${a}_rc_rate"] -or $null -eq $d.vals["${a}_srate"] -or $null -eq $d.vals["${a}_expo"]) { Fail (T 'f_noaxis' $a); return }
         # rates are stored in tens of degrees a second and shown in degrees a second
@@ -849,7 +851,7 @@ function Do-Edit {
         $v = [int][Math]::Round([int]$f.text / $f.mul)
         $shown = "$([int]$d.vals[$f.key] * $f.mul)"; $now = "$($v * $f.mul)"
         $plan[$f.key] = $v
-        if ($shown -ne $now) { Kv $f.label "$shown -> $now $($f.unit)".TrimEnd() }
+        if ($shown -ne $now) { $touched = $true; Kv $f.label "$shown -> $now $($f.unit)".TrimEnd() }
     }
     $script:cur = @{ id = $id; name = $name; craft = $d.craft }
     if (-not (Write-And-Verify $name $id $plan @())) {
@@ -1386,7 +1388,8 @@ function Dispatch([string]$line) {
             $dir = 0; $times = 1
             if ($low -match $script:STR['rx_more']) { $dir = 1; $times = Times $low 'rx_more' } elseif ($low -match $script:STR['rx_less']) { $dir = -1; $times = Times $low 'rx_less' }
 
-            if ($axes.Count -and $dir) { Do-Tune $axes $dir $times }
+            if ($axes.Count -and $low -match '(^|\s)-m(\s|$)') { Do-Edit $axes }
+            elseif ($axes.Count -and $dir) { Do-Tune $axes $dir $times }
 
             elseif ($low -match $script:STR['rx_motor']) { if ($low -match '(\d+)') { Do-Motors ([int]$Matches[1]) } else { Do-Motors 1 } }
             else { Fail (T 'f_unknowncmd') }

@@ -390,6 +390,17 @@ $script:typed = @{ thr_expo = '101' }
 Check 'a value outside 0 to 100 is refused by the editor' ((Edit-Check @(@{ key = 'thr_mid'; label = 'm'; min = 0; max = 100; text = '100' }, @{ key = 'thr_expo'; label = 'e'; min = 0; max = 100; text = '101' })) -eq (T 'ed_bad' 'e' 0 100))
 $script:typed = @{}
 
+# ---------------------------------------------------------------- yaw -m, pitch roll -m: one axis by hand
+$script:fc = New-FC 'cccc44440000222233334444' 'THM21'
+$o = Line "$($C.bind) THM"
+$script:typed = @{ yaw_srate = '300' }; $script:toProfile = $false
+$o = Line $C.yaw_edit
+Check 'yaw -m shows only yaw and writes what is typed' (($script:opened -join ' ') -eq 'yaw_rc_rate=70 yaw_srate=150 yaw_expo=0' -and (Val 'yaw_srate') -eq '30' -and (Val 'roll_srate') -eq '15' -and $o.Contains((T 'ok_confirmed' 3)))
+$script:typed = @{ cancel = 1 }
+$o = Line $C.pr_edit
+Check 'pitch roll -m shows those two axes' ($script:opened.Count -eq 6 -and -not (($script:opened -join ' ') -match 'yaw'))
+$script:typed = @{}
+
 # ---------------------------------------------------------------- status -diff and restore
 Set-Content (Join-Path $data 'presets\DIF.txt') -Encoding utf8 -Value @('# rates and a curve', 'set roll_rc_rate = 5', 'set roll_srate = 22', 'set thr_mid = 100', 'set thr_expo = 100')
 $script:fc = New-FC 'aaaa44440000222233334444' 'DIF20'

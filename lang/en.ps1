@@ -250,7 +250,7 @@
         @('set horizon [ on | off ]', 'horizon line on the OSD'),
         @('set name NAME', 'change the name shown on the OSD'),
         @(),
-        @('yaw | pitch | roll  [ more | less ]', 'rates'),
+        @('yaw | pitch | roll  [ more | less | -m ]', 'rates; -m: type them by hand'),
         @('throttle [ softer | stiffer | -m ]', 'throttle curve; -m: type it by hand'),
         @('pid [ stiffer | softer | -m ]', 'roll and pitch PID, 10% a step; -m: type them by hand. risky'),
         @('say the word again for a bigger step:  yaw more more'),
@@ -265,6 +265,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; diff = 'status -diff'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }
