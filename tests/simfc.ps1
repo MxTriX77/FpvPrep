@@ -10,7 +10,8 @@ function New-FC([string]$id = '5150aaaa1111222233334444', [string]$craft = 'SIM2
         rpm = @(1200, 1195, 1188, 1210); escErr = @(0, 0, 0, 0); running = $false; beeps = $true
         otherThr = $null   # thr_mid, thr_expo of rate profiles 1-3 when they are not at the default
         master = [ordered]@{ acc_calibration = '58,7,-6,1'; small_angle = '100'; dyn_idle_min_rpm = '0'; deadband = '0'; yaw_deadband = '0'
-                             rc_smoothing_auto_factor = '30'; craft_name = $craft }
+                             rc_smoothing_auto_factor = '30'; craft_name = $craft
+                             vcd_video_system = 'AUTO'; osd_stick_overlay_left_pos = '234'; osd_stick_overlay_right_pos = '234'; osd_stick_overlay_radio_mode = '1' }
         profile = [ordered]@{ p_roll = '65'; i_roll = '20'; d_roll = '70'; d_min_roll = '60'; p_pitch = '60'; i_pitch = '20'; d_pitch = '65'; d_min_pitch = '60'
                               f_roll = '80'; f_pitch = '80'; feedforward_transition = '0'; feedforward_jitter_factor = '7'; feedforward_boost = '15' }
         rates = [ordered]@{ thr_mid = '50'; thr_expo = '0'; rates_type = 'ACTUAL'; roll_rc_rate = '7'; pitch_rc_rate = '7'; yaw_rc_rate = '7'
@@ -19,7 +20,7 @@ function New-FC([string]$id = '5150aaaa1111222233334444', [string]$craft = 'SIM2
     }
 }
 function Sim-FC([string[]]$commands, [bool]$save) {
-    $fc = $script:fc; $o = @(); $staged = @(); $rejected = @(); $first = $true; $beepOff = $false
+    $fc = $script:fc; $o = @(); $staged = @(); $rejected = @(); $first = $true; $beepOff = $false; $beepOn = $false
     foreach ($c in $commands) {
         if ($first) { $o += $c; $first = $false } else { $o += "# $c" }   # the real echo: first line bare, the rest after the prompt
         switch -Regex ($c) {
@@ -72,6 +73,7 @@ function Sim-FC([string[]]$commands, [bool]$save) {
                 else { $o += '###ERROR: INVALID NAME###'; $rejected += $c }
             }
             '^beeper -' { $beepOff = $true }
+            '^beeper ALL$' { $beepOn = $true }
             '^beacon -' { }
             '^motor 255 1050$' { $fc.running = $true; $o += 'Using all outputs.'; $o += 'all motors: 146' }
             '^motor 255 1000$' { $fc.running = $false; $o += 'Using all outputs.'; $o += 'all motors: 0' }
@@ -81,6 +83,7 @@ function Sim-FC([string[]]$commands, [bool]$save) {
     if ($save) {   # only a saved session keeps its changes, as on the real board
         foreach ($s in $staged) { foreach ($sec in 'master', 'profile', 'rates') { if ($fc[$sec].Contains($s[0])) { $fc[$sec][$s[0]] = $s[1] } } }
         if ($beepOff) { $fc.beeps = $false }
+        if ($beepOn) { $fc.beeps = $true }
     }
     $fc.running = $false   # the board restarts at the end of every session
     if ($rejected.Count) { $o += ''; $o += "### REJECTED BY THE FC ($($rejected.Count)):"; $o += ($rejected | ForEach-Object { "   $_" }) }

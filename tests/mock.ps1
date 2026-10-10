@@ -30,6 +30,8 @@ function Set-Scenario([int]$n) {
 function Next-Drone([string]$name) {
     $id = -join ((1..24) | ForEach-Object { '0123456789abcdef'[(Get-Random -Maximum 16)] })
     $script:fc = New-FC $id "$($name.ToUpper())20"
+    # a builder's throttle curve hung from the top, the same in every rate profile
+    $script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'; $script:fc.otherThr = @('100', '100')
     $script:scenario = 0
 }
 $script:fc = New-FC

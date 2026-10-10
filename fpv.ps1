@@ -1,9 +1,10 @@
 # FPV PREP console engine. Started by FPV.cmd.
 #   bind "NAME"                 find the drone on USB and show what it is. Writes nothing.
 #   status                      full check: health and rates. Writes nothing.
-#   motors [full]               motor check, props off
+#   motors [full]               motor check
 #   set controls / set sound    write the type's saved stick settings / switch beeps off
 #   set name X                  change the name the drone shows on its OSD
+#   set sticks on|off           show or hide the stick pictures on the OSD
 #   yaw more, pitch roll less   adjust the bound drone; the change is remembered for the type
 # All text and command words come from lang\<Lang>.ps1; this file holds only the logic.
 # Every exchange with the drone goes through bf.ps1, which refuses anything about switches,
@@ -298,7 +299,10 @@ function Write-And-Verify([string]$name, [string]$id, $set, [string[]]$more) {
     $missing = @($set.Keys | Where-Object { "$($after.vals[$_])" -ne "$($set[$_])" })
     if ($missing.Count) { Fail (T 'f_missing' $missing.Count); $missing | ForEach-Object { Item (T 'i_missing' $_ $set[$_] $after.vals[$_]) }; return $false }
     if ($set.Count) { Ok (T 'ok_confirmed' $set.Count) }
-    if ($more -match '^beeper') { if ((Lines $after.diff) -match '^beeper -') { Ok (T 'ok_snd') } else { Warn (T 'w_snd_unconf') } }
+    if ($more -match '^beeper') {
+        $wantOff = [bool]($more -match '^beeper -'); $isOff = [bool]((Lines $after.diff) -match '^beeper -')
+        if ($wantOff -ne $isOff) { Warn (T 'w_snd_unconf') } elseif ($isOff) { Ok (T 'ok_snd') } else { Ok (T 'ok_snd_on') }
+    }
     return $true
 }
 
@@ -365,7 +369,7 @@ function Health($d) {
 }
 
 # ---------------------------------------------------------------- motor check
-# Props off. All four together at the lowest throttle that turns them. Returns the severity.
+# All four together at the lowest throttle that turns them. Props on or off is the pilot's call; the run is the same. Returns the severity.
 function Motor-Check([string]$mode, [switch]$AfterReboot) {
     if ($mode -eq 'full') { Step (T 'm_step_full') } else { Step (T 'm_step_quiet') }
     $cmds = @('status', 'motor 255 1050', 'dshot_telemetry_info')
@@ -520,12 +524,21 @@ function Do-Fix([string]$rest) {
             foreach ($k in $pw.Keys) { $todo[$k] = $pw[$k] }
             Kv (T 'kv_level') (Signed $level) 'Yellow'
         }
+        $stk = Sticks-Saved $name
+        if ($stk) { $sp = Sticks-Plan $d ($stk -eq 'on'); if ($sp) { foreach ($k in $sp.Keys) { $todo[$k] = $sp[$k] } } }
         Step (T 's_ctl' $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" }
     }
-    $sound = @(); if ($snd) { $sound = @('beeper -ALL', 'beacon -RX_LOST', 'beacon -RX_SET'); Step (T 's_snd') -Plain }
+    # sound: asked for now, or the choice kept with the type ("# sound: on|off") when writing controls.
+    # On is the buzzer as a whole; the motor beacon is only ever switched off (bf.ps1 refuses it on).
+    $sndWant = ''
+    if ($snd) { $sndWant = 'off'; if ($low -match $script:STR['rx_on']) { $sndWant = 'on' } } elseif ($ctl) { $sndWant = Mark-Saved $name 'sound' }
+    $sound = @()
+    if ($sndWant -eq 'off') { $sound = @('beeper -ALL', 'beacon -RX_LOST', 'beacon -RX_SET'); Step (T 's_snd' (T 'w_off').ToLower()) -Plain }
+    if ($sndWant -eq 'on') { $sound = @('beeper ALL'); Step (T 's_snd' (T 'w_on').ToLower()) -Plain }
 
     $done = @(); if ($ctl) { $done += (T 'done_ctl') }; if ($snd) { $done += (T 'done_snd') }
     $ok = Write-And-Verify $name $id $todo $sound
+    if ($ok -and $snd) { Set-Mark-Saved $name 'sound' $sndWant }
     Log "$name $id fix $($done -join '+') ok=$ok"
     Write-Host ''
     if ($ok) { Bar (T 'b_fixed' "$NAME $id" ($done -join ', ') (Took $clock)) 'Green' }
@@ -558,11 +571,78 @@ function Do-Name([string]$new) {
     Write-Host ''
     Bar (T 'b_named' "$new $id" (Took $clock)) 'Green'
 }
+# set sticks on / off: the two small stick pictures on the OSD (Betaflight's stick overlay), side
+# by side at the bottom centre. Their size is fixed by the firmware: 7 x 5 characters each.
+# Written to the plugged-in drone and kept with its quad type. Drawn for a Mode 2 radio.
+# What to write for the stick pictures on this drone's screen; $null if its firmware has none
+function Sticks-Plan($d, [bool]$on) {
+    $lp = $d.vals['osd_stick_overlay_left_pos']; $rp = $d.vals['osd_stick_overlay_right_pos']
+    if ($null -eq $lp -or $null -eq $rp) { return $null }
+    $plan = [ordered]@{}
+    if (-not $on) {
+        # hidden in every OSD profile, position kept
+        $plan['osd_stick_overlay_left_pos'] = ([int]$lp) -band (-bnot 0x3800)
+        $plan['osd_stick_overlay_right_pos'] = ([int]$rp) -band (-bnot 0x3800)
+        return $plan
+    }
+    # screen size in characters: analog is 30 wide with 13 rows sure to be visible
+    $cols = 30; $rows = 13
+    if ("$($d.vals['vcd_video_system'])" -eq 'PAL') { $rows = 16 }
+    if ("$($d.vals['vcd_video_system'])" -eq 'HD' -and [int]$d.vals['osd_canvas_width'] -gt 30) { $cols = [int]$d.vals['osd_canvas_width']; $rows = [int]$d.vals['osd_canvas_height'] }
+    $y = $rows - 6; $mid = [int]($cols / 2)
+    $place = { param([int]$x, $old) ($x -band 0x1F) -bor (($x -band 0x20) -shl 5) -bor (($y -band 0x1F) -shl 5) -bor 0x3800 -bor (([int]$old) -band 0xC000) }
+    $plan['osd_stick_overlay_left_pos'] = & $place ($mid - 8) $lp
+    $plan['osd_stick_overlay_right_pos'] = & $place ($mid + 1) $rp
+    if ($null -ne $d.vals['osd_stick_overlay_radio_mode']) { $plan['osd_stick_overlay_radio_mode'] = 2 }
+    return $plan
+}
+# A choice kept with the quad type as a "# key: value" line in its settings file
+function Mark-Saved([string]$name, [string]$key) {
+    $file = Join-Path $presets "$name.txt"
+    if (Test-Path $file) { $m = (Get-Content $file -Encoding UTF8 | Select-String -Pattern "^# ${key}:\s*(\w+)" | Select-Object -First 1); if ($m) { return $m.Matches[0].Groups[1].Value } }
+    return ''
+}
+function Set-Mark-Saved([string]$name, [string]$key, [string]$val) {
+    $file = Join-Path $presets "$name.txt"
+    if (-not (Test-Path $file)) { Save-Preset $name ([ordered]@{}) }
+    $cur = @(Get-Content $file -Encoding UTF8 | Where-Object { $_ -notmatch "^# ${key}:" })
+    $head = @($cur | Where-Object { $_ -match '^#' }); $rest = @($cur | Where-Object { $_ -notmatch '^#' })
+    Set-Content $file ($head + "# ${key}: $val" + $rest) -Encoding utf8
+    Log "$name $key $val"
+}
+# The sticks choice ("# sticks: on") is one of them: set controls gives it to every drone of the type.
+function Sticks-Saved([string]$name) { return (Mark-Saved $name 'sticks') }
+function Set-Sticks-Saved([string]$name, [bool]$on) { $val = 'off'; if ($on) { $val = 'on' }; Set-Mark-Saved $name 'sticks' $val }
+function Do-Sticks([string]$rest) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $on = $rest -match $script:STR['rx_on']; $off = $rest -match $script:STR['rx_off']
+    if (-not ($on -or $off)) { Note (T 'n_stickswhat'); return }
+    $word = (T 'w_on'); if ($off) { $word = (T 'w_off') }
+    Rule (T 'r_sticks' $word)
+    if (-not (Acquire)) { return }
+    Step (T 's_readdrone')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $plan = Sticks-Plan $d $on
+    if ($null -eq $plan) { Fail (T 'f_nosticks'); return }
+    Kv (T 'kv_sticks') $word.ToLower()
+    $type = Name-For $id
+    if (-not $type) { Fail (T 'f_unknown'); return }
+    if (-not (Write-And-Verify $type $id $plan @())) {
+        Log "$id sticks NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    Set-Sticks-Saved $type ([bool]$on)
+    Ok (T 'ok_remembered' $type.ToUpper())
+    Write-Host ''
+    Bar (T 'b_sticks' $id $word (Took $clock)) 'Green'
+}
 # ---------------------------------------------------------------- yaw / pitch / roll  more / less
-# Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40.
-# $scale halves or doubles them. Only for drones whose rates are in the ACTUAL format.
+# Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40, $times over
+# (the direction word said twice is two steps). Only for drones whose rates are in the ACTUAL format.
 # Throttle is not an axis here; it has its own command below.
-function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
+function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_more'); if ($dir -lt 0) { $word = (T 'w_less') }
     Rule (T 'r_tune' (($axes | ForEach-Object { T "ax_$_" }) -join ' + ') $word)
@@ -582,8 +662,8 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
         if ($null -eq $d.vals["${a}_rc_rate"] -or $null -eq $d.vals["${a}_srate"]) { Fail (T 'f_noaxis' $a); return }
         $base = 3; if ($a -eq 'yaw') { $base = 4 }
         $c0 = [int]$d.vals["${a}_rc_rate"]; $m0 = [int]$d.vals["${a}_srate"]
-        $c1 = [Math]::Min(30, [Math]::Max(1, $c0 + $dir * [Math]::Max(1, [int][Math]::Round(1 * $scale))))
-        $m1 = [Math]::Min(100, [Math]::Max($c1 + 1, $m0 + $dir * [Math]::Max(1, [int][Math]::Round($base * $scale))))
+        $c1 = [Math]::Min(30, [Math]::Max(1, $c0 + $dir * $times))
+        $m1 = [Math]::Min(100, [Math]::Max($c1 + 1, $m0 + $dir * $base * $times))
         $label = (T "ax_$a").ToLower()
         if ($c1 -ne $c0) { $plan["${a}_rc_rate"] = $c1; Kv (T 'kv_centre' $label) "$($c0 * 10) -> $($c1 * 10) $(T 'unit_dps')" }
         if ($m1 -ne $m0) { $plan["${a}_srate"] = $m1; Kv (T 'kv_full' $label) "$($m0 * 10) -> $($m1 * 10) $(T 'unit_dps')" }
@@ -604,14 +684,57 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
 }
 
 # ---------------------------------------------------------------- throttle softer / sharper
-# Makes the throttle curve of the quad type's profile gentler or steeper around lift-off.
-# Only thr_expo moves, 10 a step ($scale halves or doubles it); thr_mid stays as the builder set
-# it, so full stick is always full power. Which way is "softer" depends on where the curve
-# bends: one hung from the top (thr_mid 80 or more) is steepest at the bottom of the stick and
-# gets softer with LESS expo; one bent around the middle gets softer with MORE.
+# "Softer" has one meaning (user, 2026-10-10): softer when the stick is worked at lift-off AND in
+# flight. Betaflight's throttle has no sensitivity setting of its own: how much power a small
+# stick movement adds is the steepness of the curve at that point. So the command measures, on
+# the same 11-point table the firmware builds, how much stick travel lies between lift-off power
+# and cruise power of a loaded quad, and moves thr_expo the way that widens it: down for a curve
+# hung from the top, up for one bent around the middle. It stops where that stretch is widest,
+# because past it lift-off would get softer only at the price of flight, and it never leaves a
+# nearly dead part inside the stretch. thr_mid is not moved: it decides where on the stick the
+# top of the power sits, and that stays the builder's. One step is 10 of expo, $times over.
 # The starting point is the profile's curve when it names one, otherwise the drone's own.
 # The standard set still holds no throttle curve: a type gets one only through this command.
-function Do-Throttle([int]$dir, [double]$scale) {
+$thrLift = 500; $thrCruise = 850   # of 1000: where a loaded 10-13 inch quad lifts off, and cruises
+# The firmware's throttle table (same integer maths): power 0..1000 at stick 0, 10, .. 100 %
+function Thr-Table([int]$mid, [int]$expo) {
+    $tbl = @()
+    for ($i = 0; $i -le 10; $i++) {
+        $tmp = 10 * $i - $mid; $y = 1
+        if ($tmp -gt 0) { $y = 100 - $mid } elseif ($tmp -lt 0) { $y = $mid }
+        $tbl += 10 * $mid + [Math]::Truncate($tmp * (100 - $expo + [Math]::Truncate($expo * ($tmp * $tmp) / ($y * $y))) / 10)
+    }
+    return $tbl
+}
+# Stick position, in %, where a table reaches a power
+function Thr-Stick($tbl, [double]$power) {
+    for ($i = 0; $i -lt 10; $i++) {
+        if ($tbl[$i + 1] -ge $power) {
+            $rise = $tbl[$i + 1] - $tbl[$i]
+            if ($rise -le 0) { return 10.0 * $i }
+            return 10.0 * $i + 10.0 * ($power - $tbl[$i]) / $rise
+        }
+    }
+    return 100.0
+}
+# Stick travel between lift-off and cruise power: the wider, the softer
+function Thr-Travel([int]$mid, [int]$expo) {
+    $tbl = Thr-Table $mid $expo
+    return (Thr-Stick $tbl $thrCruise) - (Thr-Stick $tbl $thrLift)
+}
+# True when some part of that stretch hardly answers the stick (under 3 % power per 10 % stick)
+function Thr-Dead([int]$mid, [int]$expo) {
+    $tbl = Thr-Table $mid $expo
+    for ($i = 0; $i -lt 10; $i++) { if ($tbl[$i + 1] -gt $thrLift -and $tbl[$i] -lt $thrCruise -and ($tbl[$i + 1] - $tbl[$i]) -lt 30) { return $true } }
+    return $false
+}
+# The expo that gives this thr_mid its widest stretch
+function Thr-Softest([int]$mid) {
+    $best = 0; $widest = -1.0
+    for ($e = 0; $e -le 100; $e++) { $trav = Thr-Travel $mid $e; if ($trav -gt $widest + 1e-9) { $widest = $trav; $best = $e } }
+    return $best
+}
+function Do-Throttle([int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_sharper') }
     Rule (T 'r_thr' $word)
@@ -634,9 +757,17 @@ function Do-Throttle([int]$dir, [double]$scale) {
         # an old version's own curve is not this drone's: start from what its other rate profiles hold
         $mid, $expo = $d.otherThr[0] -split '/' | ForEach-Object { [int]$_ }
     }
-    $softer = 1; if ($mid -ge 80) { $softer = -1 }
-    $step = [Math]::Max(1, [int][Math]::Round(10 * $scale))
-    $new = [Math]::Min(100, [Math]::Max(0, $expo + $dir * $softer * $step))
+    $best = Thr-Softest $mid
+    $step = 10 * [Math]::Max(1, $times)
+    if ($dir -gt 0) {
+        # softer: towards the widest stretch, never past it and never into a dead part
+        $new = $expo + [Math]::Sign($best - $expo) * [Math]::Min($step, [Math]::Abs($best - $expo))
+        while ($new -ne $expo -and (Thr-Dead $mid $new)) { $new -= [Math]::Sign($new - $expo) }
+    } else {
+        # sharper: the other way, as far as expo goes
+        $away = [Math]::Sign($expo - $best); if ($away -eq 0) { $away = 1; if ($best -gt 50) { $away = -1 } }
+        $new = [Math]::Min(100, [Math]::Max(0, $expo + $away * $step))
+    }
     if ($new -eq $expo) { Note (T 'n_limit' (T 'kv_thr')); return }
     Kv (T 'kv_thr') "$has -> $mid / $new"
 
@@ -789,6 +920,8 @@ function Help {
 }
 
 # ---------------------------------------------------------------- dispatch
+# A direction word said more than once is that many steps at once: "yaw more more" is two.
+function Times([string]$text, [string]$key) { return [Math]::Max(1, [regex]::Matches($text, $script:STR[$key]).Count) }
 function Dispatch([string]$line) {
     $low = $line.ToLower().Trim()
     try {
@@ -796,21 +929,18 @@ function Dispatch([string]$line) {
         if ($low -match $script:STR['rx_bind']) { Do-Bind $line.Trim().Substring($Matches[0].Length) }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } else { Do-Fix $rest }
+            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
         }
         elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {
             # checked before the axis words, so "pid softer" is never read as an axis command
             $rest = $low.Substring($Matches[0].Length)
-            if ($rest -match $script:STR['rx_stiffer']) { Do-Stiff 1 } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff -1 } else { Note (T 'n_pidwhat') }
+            if ($rest -match $script:STR['rx_stiffer']) { Do-Stiff (Times $rest 'rx_stiffer') } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff (-(Times $rest 'rx_softer')) } else { Note (T 'n_pidwhat') }
         }
         elseif ($low -match $script:STR['rx_thr']) {
             # its own words too, and also ahead of the axis words
             $rest = $low.Substring($Matches[0].Length)
-            $scale = 1.0
-            if ($rest -match $script:STR['rx_half']) { $scale = 0.5 }
-            if ($rest -match $script:STR['rx_double']) { $scale = 2.0 }
-            if ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 $scale } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 $scale } else { Note (T 'n_thrwhat') }
+            if ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 (Times $rest 'rx_thr_softer') } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 (Times $rest 'rx_thr_sharper') } else { Note (T 'n_thrwhat') }
         }
         elseif ($low -match $script:STR['rx_help']) { Help }
         elseif ($low -match $script:STR['rx_status']) { Do-Status }
@@ -818,13 +948,10 @@ function Dispatch([string]$line) {
         else {
             $axes = @()
             foreach ($a in 'yaw', 'pitch', 'roll') { if ($low -match $script:STR["rx_$a"]) { $axes += $a } }
-            $dir = 0
-            if ($low -match $script:STR['rx_more']) { $dir = 1 } elseif ($low -match $script:STR['rx_less']) { $dir = -1 }
-            $scale = 1.0
-            if ($low -match $script:STR['rx_half']) { $scale = 0.5 }
-            if ($low -match $script:STR['rx_double']) { $scale = 2.0 }
+            $dir = 0; $times = 1
+            if ($low -match $script:STR['rx_more']) { $dir = 1; $times = Times $low 'rx_more' } elseif ($low -match $script:STR['rx_less']) { $dir = -1; $times = Times $low 'rx_less' }
 
-            if ($axes.Count -and $dir) { Do-Tune $axes $dir $scale }
+            if ($axes.Count -and $dir) { Do-Tune $axes $dir $times }
 
             elseif ($low -match $script:STR['rx_motor']) { if ($low -match $script:STR['rx_full']) { Do-Motors 'full' } else { Do-Motors 'silent' } }
             else { Fail (T 'f_unknowncmd') }

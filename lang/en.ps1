@@ -11,6 +11,7 @@
     rx_fix    = '^(set|fix)(\s+|$)'
     rx_fix_short = '^(controls|sound)(\s+|$)'
     rx_name = '^(name)(\s+|$)'
+    rx_sticks = '^(sticks?)(\s+|$)'; rx_on = '\b(on|show)\b'; rx_off = '\b(off|hide)\b'
     rx_help   = '^(help|\?)$'
     rx_status = '^(status)\b'
     rx_radio  = '^(radio|tx12)\b'
@@ -26,8 +27,6 @@
     rx_yaw = '\b(yaw)\b'; rx_pitch = '\b(pitch)\b'; rx_roll = '\b(roll)\b'
     rx_more = '\b(more|faster|sharper|higher|up)\b'
     rx_less = '\b(less|slower|softer|lower|down)\b'
-    rx_half = '\b(slightly|bit|little)\b'
-    rx_double = '\b(much|lot|way)\b'
 
     # ---- build: the folder and launcher of this language's release
     release = @{ folder = 'CONFIGURATOR'; launcher = 'CONFIG.cmd' }
@@ -124,13 +123,18 @@
     chip_motors = 'motors'; chip_even = 'even'; chip_after = 'after run'; chip_stopped = 'stopped'
 
     # ---- fix
-    n_fixwhat = 'set what?   set controls   /   set sound   /   set name NAME'
+    n_fixwhat = 'set what?   set controls   /   set sound   /   set name NAME   /   set sticks on'
     f_bindfirst = 'bind to a drone first:  bind "NAME"'
     r_fix = 'SET  //  {0}'; w_ctl = 'CONTROLS'; w_snd = 'SOUND'
     s_readdrone = 'reading the drone'
     f_nopreset = 'no saved settings for {0}'
+    r_sticks = 'SET  //  STICKS {0}'; w_on = 'ON'; w_off = 'OFF'
+    n_stickswhat = 'set sticks on   /   set sticks off'
+    f_nosticks = 'this firmware has no stick picture for the OSD'
+    kv_sticks = 'sticks on the OSD'
+    b_sticks = '{0}  //  STICKS {1}  //  {2}'
     r_name = 'SET  //  NAME'
-    n_namewhat = 'which name?   set name NAME'
+    n_namewhat = 'which name?   set name NAME   /   set sticks on'
     f_badname = 'name: Latin letters, digits, space and _ . - only, up to 16 characters'
     kv_osdname = 'name on the OSD'
     w_name_hidden = 'the name is not shown on this drone''s OSD'
@@ -139,15 +143,15 @@
     s_ctl = 'controls: {0} values'
     kv_thr_back = 'throttle, builder''s curve back'
     w_thr_unknown = 'throttle curve 45 / 40 came from an older version; the original is not known'
-    s_snd = 'sound: off'
+    s_snd = 'sound: {0}'
     s_write = 'writing to drone and saving'
     s_verify = 'drone restarting, reading back'
     f_rejected = 'the drone rejected a line:'
     f_missing = 'values that did not stick: {0}'
     i_missing = '{0} : wanted {1}, the drone has {2}'
     ok_confirmed = 'confirmed: {0} of {0} values are in the drone'
-    ok_snd = 'beeps are off'
-    w_snd_unconf = 'could not confirm the beeps are off'
+    ok_snd = 'beeps are off'; ok_snd_on = 'beeps are on'
+    w_snd_unconf = 'could not confirm the sound setting'
     done_ctl = 'controls'; done_snd = 'sound'
     b_fixed = '{0}  //  SET: {1}  //  {2}'
     b_problems = 'PROBLEMS  //  see above'
@@ -205,15 +209,17 @@
     help = @(
         @('bind "NAME"           ', 'find the drone on USB'),
         @('status                ', 'check the drone'),
-        @('motors [full]         ', 'motor run. PROPS OFF'),
+        @('motors [full]         ', 'motor run'),
         @(),
         @('set controls          ', 'write the stick settings'),
-        @('set sound             ', 'switch the beeper off'),
+        @('set sound on | off    ', 'the beeper'),
         @('set name NAME         ', 'change the name shown on the OSD'),
+        @('set sticks on | off   ', 'stick pictures on the OSD'),
         @(),
-        @('yaw | pitch | roll   more | less   [slightly | much]', ''),
-        @('throttle   softer | sharper   [slightly | much]', ''),
+        @('yaw | pitch | roll   more | less', ''),
+        @('throttle   softer | sharper', ''),
         @('pid stiffer | softer  ', 'roll and pitch PID, 10% a step. risky'),
+        @('say the word again for a bigger step:  yaw more more'),
         @(),
         @('radio                 ', 'radio stick calibration'),
         @('help / exit', '')
@@ -221,9 +227,9 @@
     # ---- the lines tests\sim.ps1 types, so the same test runs in every language
     test_words = @{
         bind = 'bind'; bind_none = 'bind'; unknown = 'make it pretty'; status = 'status'
-        fix_ctl = 'set controls'; fix_snd = 'set sound'; old_fix = 'fix controls'; set_name = 'set name'
-        yaw_more = 'yaw more'; pr_slightly_less = 'pitch roll slightly less'
+        fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
+        yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors full'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle sharper'; thr_slightly_softer = 'throttle slightly softer'; thr_much_sharper = 'throttle much sharper'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle sharper'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

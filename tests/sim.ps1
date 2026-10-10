@@ -47,6 +47,8 @@ function Check([string]$what, [bool]$ok) {
 function Val([string]$k) { foreach ($sec in 'master', 'profile', 'rates') { if ($script:fc[$sec].Contains($k)) { return $script:fc[$sec][$k] } }; return $null }
 function Has([string]$text, [string]$key) { return $text.Contains((T $key)) }
 function Preset([string]$name) { return (Get-Content (Join-Path $data "presets\$name.txt") -Raw) }
+# A command with its direction word said $n times: "yaw more" -> "yaw more more"
+function Again([string]$cmd, [int]$n) { return $cmd + ((' ' + ($cmd -split ' ')[-1]) * ($n - 1)) }
 $C = $script:STR['test_words']   # the command words of the language under test
 $green = "$(T 'r_motors')  //  $(T 'good_motors')"
 
@@ -90,6 +92,11 @@ $o = Line $C.fix_short
 Check 'the bare word works as fix controls' ($o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'ok_confirmed' 15)))
 $o = Line $C.fix_snd
 Check 'fix sound switches the beeps off and confirms' (-not $script:fc.beeps -and (Has $o 'ok_snd'))
+Check 'the sound choice is kept with the type' ((Preset 'SIM') -match '# sound: off')
+$o = Line $C.snd_on
+Check 'set sound on brings the buzzer back and confirms' ($script:fc.beeps -and (Has $o 'ok_snd_on') -and (Preset 'SIM') -match '# sound: on' -and $script:sent -contains 'beeper ALL')
+$o = Line $C.fix_snd; $script:fc.beeps = $true; $o = Line $C.fix_ctl
+Check 'set controls applies the saved sound choice' (-not $script:fc.beeps -and (Has $o 'ok_snd'))
 # a file of one drone's own values (made by hand, by its id) is written on top of the type's
 New-Item -ItemType Directory -Force (Join-Path $data 'presets\drones') | Out-Null
 Set-Content (Join-Path $data 'presets\drones\5150aaaa.txt') -Encoding utf8 -Value @('# this drone only', 'set thr_mid = 100', 'set thr_expo = 100')
@@ -103,8 +110,8 @@ Check 'the standard set shipped with the tool leaves the throttle curve alone' (
 $o = Line $C.yaw_more @('y')
 Check 'yaw more steps centre by 10 and full stick by 40' ((Val 'yaw_rc_rate') -eq '10' -and (Val 'yaw_srate') -eq '34' -and $o.Contains('90 -> 100') -and $o.Contains('300 -> 340'))
 Check 'an axis change is applied and remembered without any question' ((Preset 'SIM') -match 'set yaw_srate = 34' -and -not ((Preset 'SIM') -match 'set yaw_srate = 30') -and -not $o.Contains((T 'yn')))
-$o = Line $C.pr_slightly_less @('y')
-Check 'pitch roll slightly less: half steps on both axes' ((Val 'roll_rc_rate') -eq '4' -and (Val 'pitch_rc_rate') -eq '4' -and (Val 'roll_srate') -eq '23' -and (Val 'pitch_srate') -eq '23')
+$o = Line $C.pr_less @('y')
+Check 'pitch roll less: one step on both axes' ((Val 'roll_rc_rate') -eq '4' -and (Val 'pitch_rc_rate') -eq '4' -and (Val 'roll_srate') -eq '22' -and (Val 'pitch_srate') -eq '22')
 $before = $script:saves
 $o = Line $C.thr_more
 Check 'throttle with no direction lists the two choices and writes nothing' ((Has $o 'n_thrwhat') -and $script:saves -eq $before -and (Val 'thr_expo') -eq '25')
@@ -171,12 +178,12 @@ $script:fc = New-FC '77bb00112233445566778899'
 $o = Line $C.bind_none
 Check 'bind with no name uses the last quad type' ($o.Contains('77bb0011') -and $o.Contains('SIM'))
 $o = Line $C.fix_ctl
-Check 'the next drone gets the type''s rates and its stiffness level' ((Val 'roll_srate') -eq '23' -and (Val 'yaw_srate') -eq '34' -and (Val 'thr_expo') -eq '25' -and (Val 'p_roll') -eq '78' -and (Val 'd_pitch') -eq '78')
+Check 'the next drone gets the type''s rates and its stiffness level' ((Val 'roll_srate') -eq '22' -and (Val 'yaw_srate') -eq '34' -and (Val 'thr_expo') -eq '25' -and (Val 'p_roll') -eq '78' -and (Val 'd_pitch') -eq '78')
 
 $script:fc = New-FC 'c0ffee001122334455667788' 'OTHER'
 $o = Line "$($C.bind) SIM"
 $o = Line $C.fix_ctl
-Check 'a drone whose own name differs from its type is set without any question' ((Val 'roll_srate') -eq '23' -and -not $o.Contains((T 'yn')))
+Check 'a drone whose own name differs from its type is set without any question' ((Val 'roll_srate') -eq '22' -and -not $o.Contains((T 'yn')))
 
 # set name: the name the drone shows on its OSD
 $before = $script:saves
@@ -256,16 +263,26 @@ Check 'throttle softer on a top-hung curve takes 10 off the expo and keeps thr_m
 Check 'the new curve is in the type''s profile, both values' ((Preset 'CRV') -match 'set thr_expo = 68' -and (Preset 'CRV') -match 'set thr_mid = 100' -and -not ((Preset 'CRV') -match 'set thr_expo = 78'))
 $o = Line $C.thr_sharper
 Check 'throttle sharper undoes it' ((Val 'thr_expo') -eq '78' -and (Preset 'CRV') -match 'set thr_expo = 78')
-$o = Line $C.thr_slightly_softer
-Check 'slightly is half a step' ((Val 'thr_expo') -eq '73')
-$o = Line $C.thr_much_sharper
-Check 'much is a double step' ((Val 'thr_expo') -eq '93')
-$o = Line $C.thr_sharper; $before = $script:saves; $o = Line $C.thr_sharper
+$o = Line (Again $C.thr_softer 2)
+Check 'the word said twice is two steps at once' ((Val 'thr_expo') -eq '58' -and $o.Contains('100 / 78 -> 100 / 58'))
+$o = Line (Again $C.thr_sharper 3)
+Check 'and three times is three' ((Val 'thr_expo') -eq '88')
+$o = Line (Again $C.thr_sharper 2); $before = $script:saves; $o = Line $C.thr_sharper
 Check 'the curve stops at the limit and nothing more is written' ((Val 'thr_expo') -eq '100' -and $script:saves -eq $before -and $o.Contains((T 'n_limit' (T 'kv_thr'))))
 $script:fc = New-FC 'ffff11110000222233334444' 'CRV20'
 $script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '60'; $script:fc.otherThr = @('100', '100')
 $o = Line "$($C.bind) CRV"; $o = Line $C.thr_softer
 Check 'the profile''s curve is the starting point, not what this drone happens to hold' ((Val 'thr_expo') -eq '90' -and $o.Contains('100 / 60 -> 100 / 90'))
+# softer means softer at lift-off AND in flight: it stops where the stick travel between the two
+# is widest. The firmware's own table is the yardstick, so that is checked first.
+Check 'the throttle table is the firmware''s' (((Thr-Table 100 100) -join ' ') -eq '0 271 488 657 784 875 936 973 992 999 1000' -and ((Thr-Table 45 40) -join ' ') -eq '0 156 270 354 420 480 543 620 716 837 1000' -and ((Thr-Table 50 0) -join ' ') -eq '0 100 200 300 400 500 600 700 800 900 1000')
+$widest = Thr-Softest 100
+$o = Line (Again $C.thr_softer 10)
+Check 'softer stops where lift-off to cruise has the most stick travel' ((Val 'thr_expo') -eq "$widest" -and $widest -gt 20 -and $widest -lt 60 -and (Thr-Travel 100 $widest) -gt (Thr-Travel 100 100) + 10 -and (Thr-Travel 100 $widest) -ge (Thr-Travel 100 0))
+$before = $script:saves; $o = Line $C.thr_softer
+Check 'and then says so and writes nothing' ($script:saves -eq $before -and $o.Contains((T 'n_limit' (T 'kv_thr'))))
+$o = Line $C.thr_sharper
+Check 'from the softest point sharper goes back the way it came' ((Val 'thr_expo') -eq "$($widest + 10)")
 # a type with no curve in its profile starts from the drone's own; a curve bent around the
 # middle gets softer with MORE expo
 $script:fc = New-FC 'aaaa22220000222233334444' 'MID20'
@@ -274,11 +291,40 @@ $script:fc.rates.thr_mid = '50'; $script:fc.rates.thr_expo = '20'
 $o = Line "$($C.bind) MID"; $o = Line $C.thr_softer
 Check 'a curve bent around the middle gets softer with more expo' ((Val 'thr_mid') -eq '50' -and (Val 'thr_expo') -eq '30' -and (Val 'roll_srate') -eq '15')
 Check 'a profile that had no curve now names both values' ((Preset 'MID') -match 'set thr_mid = 50' -and (Preset 'MID') -match 'set thr_expo = 30')
+$o = Line (Again $C.thr_softer 10)
+$e = [int](Val 'thr_expo')
+Check 'and softer never leaves a dead part between lift-off and cruise' ($e -gt 40 -and -not (Thr-Dead 50 $e) -and (Thr-Dead 50 ($e + 1)))
 $script:fc = New-FC 'bbbb22220000222233334444' 'OLD20'
 Set-Content (Join-Path $data 'presets\OLD.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
 $script:fc.rates.thr_mid = '45'; $script:fc.rates.thr_expo = '40'; $script:fc.otherThr = @('100', '100')
 $o = Line "$($C.bind) OLD"; $o = Line $C.thr_softer
 Check 'a drone with the old tool''s curve starts from what its other rate profiles hold' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '90' -and $o.Contains('45 / 40 -> 100 / 90'))
+
+# ---------------------------------------------------------------- set sticks on / off
+$script:fc = New-FC 'dddd22220000222233334444' 'STK20'
+$o = Line "$($C.bind) STK"; $o = Line $C.sticks_on
+Check 'set sticks on puts both pictures at the bottom centre, visible, Mode 2' ((Val 'osd_stick_overlay_left_pos') -eq '14567' -and (Val 'osd_stick_overlay_right_pos') -eq '14576' -and (Val 'osd_stick_overlay_radio_mode') -eq '2' -and (Val 'roll_srate') -eq '15')
+$o = Line $C.sticks_off
+Check 'set sticks off hides them and keeps their place' ((Val 'osd_stick_overlay_left_pos') -eq '231' -and (Val 'osd_stick_overlay_right_pos') -eq '240')
+$script:fc = New-FC 'eeee22220000222233334444' 'STK21'
+$o = Line "$($C.bind) STK"; $o = Line $C.sticks_on; $o = Line $C.sticks_off; $o = Line $C.sticks_on
+$script:fc = New-FC 'ffff22220000222233334444' 'STK22'
+$o = Line "$($C.bind) STK"; $o = Line $C.fix_ctl
+Check 'the choice is kept with the type: set controls gives the next drone its sticks' ((Preset 'STK') -match '# sticks: on' -and -not ((Preset 'STK') -match '# sticks: off') -and (Val 'osd_stick_overlay_left_pos') -eq '14567' -and (Val 'osd_stick_overlay_radio_mode') -eq '2')
+$before = $script:saves; $o = Line $C.sticks
+Check 'set sticks alone lists the two choices' ((Has $o 'n_stickswhat') -and $script:saves -eq $before)
+$script:fc.master.Remove('osd_stick_overlay_left_pos'); $o = Line $C.sticks_on
+Check 'a firmware without the stick picture is said so, nothing written' ((Has $o 'f_nosticks') -and $script:saves -eq $before)
+
+# ---------------------------------------------------------------- the direction word more than once
+Set-Content (Join-Path $data 'presets\TWO.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc = New-FC 'cccc22220000222233334444' 'TWO20'
+$o = Line "$($C.bind) TWO"; $o = Line (Again $C.yaw_more 2)
+Check 'yaw more more is two steps at once' ((Val 'yaw_rc_rate') -eq '9' -and (Val 'yaw_srate') -eq '23' -and $o.Contains('70 -> 90') -and $o.Contains('150 -> 230'))
+$o = Line (Again $C.pid_stiffer 2) @('y')
+Check 'pid stiffer stiffer is two levels at once' ((Val 'p_roll') -eq '78' -and (Preset 'TWO') -match '# stiffness: 2')
+$o = Line (Again $C.pid_stiffer 4) @('y')
+Check 'more words than there are levels left stops at the last level' ((Val 'p_roll') -eq '85' -and (Preset 'TWO') -match '# stiffness: 3')
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)
