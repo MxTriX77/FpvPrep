@@ -145,7 +145,8 @@ $o = Line $C.motors
 Check 'motors: four rows, healthy, green' ($o.Contains('1200') -and $o.Contains('1210') -and $o.Contains($green) -and -not $script:fc.running)
 Check 'motors always sends the stop command' ($script:sent -contains 'motor 255 1000')
 $script:fc.rpm = @(1200, 1195, 0, 1210)
-$o = Line $C.motors_full
+$n0 = $script:sent.Count; $o = Line $C.motors_full
+Check 'motors -3 runs for about three seconds: four speed readings, and says 3 s' (@($script:sent | Select-Object -Skip $n0 | Where-Object { $_ -eq 'dshot_telemetry_info' }).Count -eq 4 -and $o.Contains((T 'm_step' 3)))
 Check 'a motor that does not turn is red: do not fly' ($o.Contains((T 'm_dead' 3)) -and $o.Contains(((T 'v_fail') -f (T 'r_motors'), '').Substring(0, 16)))
 $script:fc.rpm = @(1200, 1195, 900, 1210)
 $o = Line $C.motors
@@ -315,6 +316,16 @@ $before = $script:saves; $o = Line $C.sticks
 Check 'set sticks alone lists the two choices' ((Has $o 'n_stickswhat') -and $script:saves -eq $before)
 $script:fc.master.Remove('osd_stick_overlay_left_pos'); $o = Line $C.sticks_on
 Check 'a firmware without the stick picture is said so, nothing written' ((Has $o 'f_nosticks') -and $script:saves -eq $before)
+
+# ---------------------------------------------------------------- set horizon on / off
+$script:fc = New-FC 'aaaa33330000222233334444' 'HOR20'
+$o = Line "$($C.bind) HOR"; $o = Line $C.hor_on
+Check 'set horizon on shows the horizon line where it is and keeps the choice with the type' ((Val 'osd_ah_pos') -eq '14542' -and (Preset 'HOR') -match '# horizon: on')
+$script:fc = New-FC 'bbbb33330000222233334444' 'HOR21'
+$o = Line "$($C.bind) HOR"; $o = Line $C.fix_ctl
+Check 'set controls gives the next drone of the type its horizon' ((Val 'osd_ah_pos') -eq '14542')
+$o = Line $C.hor_off
+Check 'set horizon off hides it' ((Val 'osd_ah_pos') -eq '206' -and (Preset 'HOR') -match '# horizon: off')
 
 # ---------------------------------------------------------------- the direction word more than once
 Set-Content (Join-Path $data 'presets\TWO.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')

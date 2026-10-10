@@ -12,6 +12,7 @@
     rx_fix_short = '^(controls|sound)(\s+|$)'
     rx_name = '^(name)(\s+|$)'
     rx_sticks = '^(sticks?)(\s+|$)'; rx_on = '\b(on|show)\b'; rx_off = '\b(off|hide)\b'
+    rx_horizon = '^(horizon([\s_]*bar)?)(\s+|$)'
     rx_help   = '^(help|\?)$'
     rx_status = '^(status)\b'
     rx_radio  = '^(radio|tx12)\b'
@@ -112,8 +113,7 @@
 
     # ---- motor check
     r_motors = 'MOTORS'; good_motors = 'OK'
-    m_step_quiet = 'spinning motors: all four, 1 s, idle'
-    m_step_full = 'spinning motors: all four, 3 s'
+    m_step = 'spinning motors: all four, {0} s, idle'
     m_noread = 'no speed readout from the motors. Is the battery plugged in?'
     m_row = 'motor {0}'; m_err = 'err {0}%'
     m_dead = 'motor {0} did not turn'
@@ -133,6 +133,11 @@
     f_nosticks = 'this firmware has no stick picture for the OSD'
     kv_sticks = 'sticks on the OSD'
     b_sticks = '{0}  //  STICKS {1}  //  {2}'
+    r_horizon = 'SET  //  HORIZON {0}'
+    n_horizonwhat = 'set horizon on   /   set horizon off'
+    f_nohorizon = 'this firmware has no horizon line for the OSD'
+    kv_horizon = 'horizon on the OSD'
+    b_horizon = '{0}  //  HORIZON {1}  //  {2}'
     r_name = 'SET  //  NAME'
     n_namewhat = 'which name?   set name NAME   /   set sticks on'
     f_badname = 'name: Latin letters, digits, space and _ . - only, up to 16 characters'
@@ -174,9 +179,9 @@
     # ---- throttle softer / throttle sharper
     rx_thr = '^(throttle|thr)(\s+|$)'
     rx_thr_softer = '\b(softer|soften)\b'
-    rx_thr_sharper = '\b(sharper|sharpen)\b'
-    n_thrwhat = 'throttle softer   /   throttle sharper'
-    r_thr = 'THROTTLE  //  {0}'; w_sharper = 'SHARPER'
+    rx_thr_sharper = '\b(stiffer|sharper|sharpen)\b'
+    n_thrwhat = 'throttle softer   /   throttle stiffer'
+    r_thr = 'THROTTLE  //  {0}'
     s_readthr = 'reading the throttle curve'
     f_nothr = 'throttle curve not found in the config'
     kv_thr = 'throttle curve'
@@ -207,21 +212,22 @@
     # ---- help: two items = command and what it does, one item = a note, none = blank line
     r_help = 'COMMANDS'
     help = @(
-        @('bind "NAME"           ', 'find the drone on USB'),
-        @('status                ', 'check the drone'),
-        @('motors [full]         ', 'motor run'),
+        @('bind "NAME"', 'find the drone on USB'),
+        @('status', 'check the drone'),
+        @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
-        @('set controls          ', 'write the stick settings'),
-        @('set sound on | off    ', 'the beeper'),
-        @('set name NAME         ', 'change the name shown on the OSD'),
-        @('set sticks on | off   ', 'stick pictures on the OSD'),
+        @('set controls', 'write the stick settings'),
+        @('set sound [ on | off ]', 'the beeper'),
+        @('set sticks [ on | off ]', 'stick pictures on the OSD'),
+        @('set horizon [ on | off ]', 'horizon line on the OSD'),
+        @('set name NAME', 'change the name shown on the OSD'),
         @(),
-        @('yaw | pitch | roll   more | less', ''),
-        @('throttle   softer | sharper', ''),
-        @('pid stiffer | softer  ', 'roll and pitch PID, 10% a step. risky'),
+        @('yaw | pitch | roll  [ more | less ]', 'rates'),
+        @('throttle [ softer | stiffer ]', 'throttle curve'),
+        @('pid [ stiffer | softer ]', 'roll and pitch PID, 10% a step. risky'),
         @('say the word again for a bigger step:  yaw more more'),
         @(),
-        @('radio                 ', 'radio stick calibration'),
+        @('radio', 'radio stick calibration'),
         @('help / exit', '')
     )
     # ---- the lines tests\sim.ps1 types, so the same test runs in every language
@@ -229,7 +235,7 @@
         bind = 'bind'; bind_none = 'bind'; unknown = 'make it pretty'; status = 'status'
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
-        motors = 'motors'; motors_full = 'motors full'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle sharper'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        motors = 'motors'; motors_full = 'motors -3'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

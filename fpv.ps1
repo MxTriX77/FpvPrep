@@ -1,7 +1,7 @@
 # FPV PREP console engine. Started by FPV.cmd.
 #   bind "NAME"                 find the drone on USB and show what it is. Writes nothing.
 #   status                      full check: health and rates. Writes nothing.
-#   motors [full]               motor check
+#   motors [-N]                 motor check, N seconds
 #   set controls / set sound    write the type's saved stick settings / switch beeps off
 #   set name X                  change the name the drone shows on its OSD
 #   set sticks on|off           show or hide the stick pictures on the OSD
@@ -370,10 +370,13 @@ function Health($d) {
 
 # ---------------------------------------------------------------- motor check
 # All four together at the lowest throttle that turns them. Props on or off is the pilot's call; the run is the same. Returns the severity.
-function Motor-Check([string]$mode, [switch]$AfterReboot) {
-    if ($mode -eq 'full') { Step (T 'm_step_full') } else { Step (T 'm_step_quiet') }
+# $secs: how long they turn, 1 to 10. The run lasts as long as the speed readings in between take,
+# about three quarters of a second each, so the time is approximate.
+function Motor-Check([int]$secs = 1, [switch]$AfterReboot) {
+    $secs = [Math]::Min(10, [Math]::Max(1, $secs))
+    Step (T 'm_step' $secs)
     $cmds = @('status', 'motor 255 1050', 'dshot_telemetry_info')
-    if ($mode -eq 'full') { $cmds += 'dshot_telemetry_info', 'dshot_telemetry_info', 'dshot_telemetry_info' }
+    for ($n = [int][Math]::Round($secs / 0.75) - 1; $n -gt 0; $n--) { $cmds += 'dshot_telemetry_info' }
     $cmds += 'motor 255 1000'
     $out = Talk $cmds -AfterReboot:$AfterReboot
     $rows = @([regex]::Matches($out, '(?m)^\s*([1-4])\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)%'))
@@ -526,6 +529,8 @@ function Do-Fix([string]$rest) {
         }
         $stk = Sticks-Saved $name
         if ($stk) { $sp = Sticks-Plan $d ($stk -eq 'on'); if ($sp) { foreach ($k in $sp.Keys) { $todo[$k] = $sp[$k] } } }
+        $hor = Mark-Saved $name 'horizon'
+        if ($hor) { $hp = Horizon-Plan $d ($hor -eq 'on'); if ($hp) { foreach ($k in $hp.Keys) { $todo[$k] = $hp[$k] } } }
         Step (T 's_ctl' $todo.Count) -Plain; foreach ($k in $todo.Keys) { Item "$k = $($todo[$k])" }
     }
     # sound: asked for now, or the choice kept with the type ("# sound: on|off") when writing controls.
@@ -638,6 +643,40 @@ function Do-Sticks([string]$rest) {
     Write-Host ''
     Bar (T 'b_sticks' $id $word (Took $clock)) 'Green'
 }
+# set horizon on / off: the artificial horizon line on the OSD. Only its visibility changes; it
+# stays where the drone has it (the screen centre unless the builder moved it). Kept with the type.
+function Horizon-Plan($d, [bool]$on) {
+    $pos = $d.vals['osd_ah_pos']
+    if ($null -eq $pos) { return $null }
+    $v = ([int]$pos) -band (-bnot 0x3800); if ($on) { $v = ([int]$pos) -bor 0x3800 }
+    return [ordered]@{ osd_ah_pos = $v }
+}
+function Do-Horizon([string]$rest) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $on = $rest -match $script:STR['rx_on']; $off = $rest -match $script:STR['rx_off']
+    if (-not ($on -or $off)) { Note (T 'n_horizonwhat'); return }
+    $word = (T 'w_on'); if ($off) { $word = (T 'w_off') }
+    Rule (T 'r_horizon' $word)
+    if (-not (Acquire)) { return }
+    Step (T 's_readdrone')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $plan = Horizon-Plan $d $on
+    if ($null -eq $plan) { Fail (T 'f_nohorizon'); return }
+    Kv (T 'kv_horizon') $word.ToLower()
+    $type = Name-For $id
+    if (-not $type) { Fail (T 'f_unknown'); return }
+    if (-not (Write-And-Verify $type $id $plan @())) {
+        Log "$id horizon NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    $val = 'off'; if ($on) { $val = 'on' }
+    Set-Mark-Saved $type 'horizon' $val
+    Ok (T 'ok_remembered' $type.ToUpper())
+    Write-Host ''
+    Bar (T 'b_horizon' $id $word (Took $clock)) 'Green'
+}
 # ---------------------------------------------------------------- yaw / pitch / roll  more / less
 # Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40, $times over
 # (the direction word said twice is two steps). Only for drones whose rates are in the ACTUAL format.
@@ -736,7 +775,7 @@ function Thr-Softest([int]$mid) {
 }
 function Do-Throttle([int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_sharper') }
+    $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_stiffer') }
     Rule (T 'r_thr' $word)
     if (-not (Acquire)) { return }
     Step (T 's_readthr')
@@ -862,11 +901,11 @@ function Do-Stiff([int]$dir) {
 }
 
 # ---------------------------------------------------------------- motors, status, radio, help
-function Do-Motors([string]$mode) {
+function Do-Motors([int]$secs = 1) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_motors')
     if (-not (Acquire)) { return }
-    $sev = Motor-Check $mode
+    $sev = Motor-Check $secs
     Log "motors only: $($script:motorLog)"
     Verdict $sev (T 'r_motors') (T 'good_motors') $clock
 }
@@ -912,10 +951,11 @@ function Do-Radio {
 function Help {
     Rule (T 'r_help')
     Write-Host ''
+    $wide = ($script:STR['help'] | Where-Object { $_.Count -eq 2 } | ForEach-Object { $_[0].TrimEnd().Length } | Measure-Object -Maximum).Maximum + 4
     foreach ($h in $script:STR['help']) {
         if ($h.Count -eq 0) { Write-Host ''; continue }
         if ($h.Count -eq 1) { Note $h[0]; continue }
-        Write-Host $IND -NoNewline; Write-Host $h[0] -ForegroundColor Cyan -NoNewline; Write-Host $h[1] -ForegroundColor Gray
+        Write-Host $IND -NoNewline; Write-Host $h[0].TrimEnd().PadRight($wide) -ForegroundColor Cyan -NoNewline; Write-Host $h[1] -ForegroundColor Gray
     }
 }
 
@@ -929,7 +969,7 @@ function Dispatch([string]$line) {
         if ($low -match $script:STR['rx_bind']) { Do-Bind $line.Trim().Substring($Matches[0].Length) }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
+            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
         }
         elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {
@@ -953,7 +993,7 @@ function Dispatch([string]$line) {
 
             if ($axes.Count -and $dir) { Do-Tune $axes $dir $times }
 
-            elseif ($low -match $script:STR['rx_motor']) { if ($low -match $script:STR['rx_full']) { Do-Motors 'full' } else { Do-Motors 'silent' } }
+            elseif ($low -match $script:STR['rx_motor']) { if ($low -match '(\d+)') { Do-Motors ([int]$Matches[1]) } else { Do-Motors 1 } }
             else { Fail (T 'f_unknowncmd') }
         }
     } catch { Fail (Local-Error $_.Exception.Message) }
