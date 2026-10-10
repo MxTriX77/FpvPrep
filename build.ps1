@@ -13,14 +13,17 @@
 #   2. after building, each launcher is opened in a real (hidden) console window, typed into and
 #      read back by tests\console.ps1.
 #   .\build.ps1 -MockOnly -MockFolder X -MockLauncher Y.cmd    only the mock, under other names
+#   .\build.ps1 -Lang en -To D:\some\folder    one language's release straight into that folder
+#                                              (its saved settings and logs are left alone), no mock
 param([string[]]$Lang, [string]$MockLang, [string]$OutRoot = [Environment]::GetFolderPath('Desktop'),
-      [string]$MockFolder = 'MOCK', [string]$MockLauncher = 'MOCK.cmd', [switch]$MockOnly)
+      [string]$MockFolder = 'MOCK', [string]$MockLauncher = 'MOCK.cmd', [switch]$MockOnly, [string]$To)
 
 $ErrorActionPreference = 'Stop'
 $src = $PSScriptRoot
 if (-not $Lang) { $Lang = @(Get-ChildItem (Join-Path $src 'lang') -Filter '*.ps1' | ForEach-Object BaseName) }
 if (-not $MockLang) { $MockLang = $Lang[0]; if ($Lang -contains 'ru') { $MockLang = 'ru' } }
 if ($MockOnly) { $Lang = @($MockLang) }
+if ($To) { if ($Lang.Count -ne 1 -or $MockOnly) { throw '-To needs exactly one -Lang and no -MockOnly' }; $MockLang = '' }
 $ps = 'powershell.exe'; $psArgs = '-NoProfile', '-ExecutionPolicy', 'Bypass'
 
 # Opens one launcher in its own console, types the lines, returns the screen text
@@ -50,7 +53,8 @@ $failed = @()
 foreach ($l in $Lang) {
     if (-not (Test-Path (Join-Path $src "lang\$l.ps1"))) { throw "no language file lang\$l.ps1" }
     $txt = & (Join-Path $src "lang\$l.ps1"); $w = $txt['test_words']
-    $rel = Join-Path $OutRoot $txt['release'].folder; $launcher = Join-Path $rel $txt['release'].launcher
+    $rel = Join-Path $OutRoot $txt['release'].folder; if ($To) { $rel = $To }
+    $launcher = Join-Path $rel $txt['release'].launcher
     if (Test-Path $rel -PathType Leaf) { throw "$rel is a file, not a folder" }
     "== $($l.ToUpper())"
 

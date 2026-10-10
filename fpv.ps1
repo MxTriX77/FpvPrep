@@ -561,8 +561,7 @@ function Do-Name([string]$new) {
 # ---------------------------------------------------------------- yaw / pitch / roll  more / less
 # Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40.
 # $scale halves or doubles them. Only for drones whose rates are in the ACTUAL format.
-# Throttle is not an axis here: the pilot adapts to each drone's throttle stick, and its curve
-# belongs to the builder (user, 2026-10-09).
+# Throttle is not an axis here; it has its own command below.
 function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_more'); if ($dir -lt 0) { $word = (T 'w_less') }
@@ -600,6 +599,57 @@ function Do-Tune([string[]]$axes, [int]$dir, [double]$scale) {
     }
     Remember $name $plan
     Log "$name $id tune $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
+}
+
+# ---------------------------------------------------------------- throttle softer / sharper
+# Makes the throttle curve of the quad type's profile gentler or steeper around lift-off.
+# Only thr_expo moves, 10 a step ($scale halves or doubles it); thr_mid stays as the builder set
+# it, so full stick is always full power. Which way is "softer" depends on where the curve
+# bends: one hung from the top (thr_mid 80 or more) is steepest at the bottom of the stick and
+# gets softer with LESS expo; one bent around the middle gets softer with MORE.
+# The starting point is the profile's curve when it names one, otherwise the drone's own.
+# The standard set still holds no throttle curve: a type gets one only through this command.
+function Do-Throttle([int]$dir, [double]$scale) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_sharper') }
+    Rule (T 'r_thr' $word)
+    if (-not (Acquire)) { return }
+    Step (T 's_readthr')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $name = Name-For $id
+    if (-not $name) { Fail (T 'f_unknown'); return }
+    $NAME = $name.ToUpper()
+    Kv (T 'kv_drone') "$NAME $id"
+    if ($null -eq $d.vals['thr_mid'] -or $null -eq $d.vals['thr_expo']) { Fail (T 'f_nothr'); return }
+
+    $has = "$($d.vals['thr_mid']) / $($d.vals['thr_expo'])"
+    $mid = [int]$d.vals['thr_mid']; $expo = [int]$d.vals['thr_expo']
+    $saved = (Wanted $name $id).want
+    if ($saved.Contains('thr_mid') -and $saved.Contains('thr_expo')) { $mid = [int]$saved['thr_mid']; $expo = [int]$saved['thr_expo'] }
+    elseif ($has -eq '45 / 40' -and $d.otherThr.Count -eq 1 -and $d.otherThr[0] -ne '45/40') {
+        # an old version's own curve is not this drone's: start from what its other rate profiles hold
+        $mid, $expo = $d.otherThr[0] -split '/' | ForEach-Object { [int]$_ }
+    }
+    $softer = 1; if ($mid -ge 80) { $softer = -1 }
+    $step = [Math]::Max(1, [int][Math]::Round(10 * $scale))
+    $new = [Math]::Min(100, [Math]::Max(0, $expo + $dir * $softer * $step))
+    if ($new -eq $expo) { Note (T 'n_limit' (T 'kv_thr')); return }
+    Kv (T 'kv_thr') "$has -> $mid / $new"
+
+    # no question, as with the axes: the opposite word undoes it. Always both values, so the
+    # profile's curve is complete on its own.
+    $plan = [ordered]@{ thr_mid = $mid; thr_expo = $new }
+    $script:cur = @{ id = $id; name = $name; craft = $d.craft }
+    if (-not (Write-And-Verify $name $id $plan @())) {
+        Log "$name $id throttle NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    Remember $name $plan
+    Log "$name $id throttle $(Pairs $plan)"
     Write-Host ''
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
 }
@@ -753,6 +803,14 @@ function Dispatch([string]$line) {
             # checked before the axis words, so "pid softer" is never read as an axis command
             $rest = $low.Substring($Matches[0].Length)
             if ($rest -match $script:STR['rx_stiffer']) { Do-Stiff 1 } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff -1 } else { Note (T 'n_pidwhat') }
+        }
+        elseif ($low -match $script:STR['rx_thr']) {
+            # its own words too, and also ahead of the axis words
+            $rest = $low.Substring($Matches[0].Length)
+            $scale = 1.0
+            if ($rest -match $script:STR['rx_half']) { $scale = 0.5 }
+            if ($rest -match $script:STR['rx_double']) { $scale = 2.0 }
+            if ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 $scale } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 $scale } else { Note (T 'n_thrwhat') }
         }
         elseif ($low -match $script:STR['rx_help']) { Help }
         elseif ($low -match $script:STR['rx_status']) { Do-Status }

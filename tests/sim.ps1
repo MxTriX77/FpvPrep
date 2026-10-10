@@ -107,7 +107,7 @@ $o = Line $C.pr_slightly_less @('y')
 Check 'pitch roll slightly less: half steps on both axes' ((Val 'roll_rc_rate') -eq '4' -and (Val 'pitch_rc_rate') -eq '4' -and (Val 'roll_srate') -eq '23' -and (Val 'pitch_srate') -eq '23')
 $before = $script:saves
 $o = Line $C.thr_more
-Check 'throttle is not something the tool tunes' ((Has $o 'f_unknowncmd') -and $script:saves -eq $before -and (Val 'thr_expo') -eq '25')
+Check 'throttle with no direction lists the two choices and writes nothing' ((Has $o 'n_thrwhat') -and $script:saves -eq $before -and (Val 'thr_expo') -eq '25')
 $script:fc.rates.rates_type = 'BETAFLIGHT'
 $before = $script:saves
 $o = Line $C.yaw_more @('y')
@@ -237,6 +237,48 @@ $script:fc = New-FC 'cccc11110000222233334444' 'THR20'
 $script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'; $script:fc.otherThr = @('100', '100')
 $o = Line "$($C.bind) THR"; $n0 = $script:sent.Count; $o = Line $C.fix_ctl
 Check 'a throttle curve the tool did not write is never touched' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '100' -and -not $o.Contains((T 'kv_thr_back')) -and -not (@($script:sent | Select-Object -Skip $n0) -match '^set thr_'))
+# a type whose saved settings name a throttle curve: every drone of the type gets that curve
+Set-Content (Join-Path $data 'presets\CRV.txt') -Encoding utf8 -Value @('# with its own throttle curve', 'set roll_srate = 25', 'set thr_mid = 100', 'set thr_expo = 78')
+$script:fc = New-FC 'dddd11110000222233334444' 'CRV20'
+$script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) CRV"; $o = Line $C.fix_ctl
+Check 'a throttle curve named in a type''s settings is written' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '78' -and (Val 'roll_srate') -eq '25')
+$script:fc = New-FC 'eeee11110000222233334444' 'CRV20'
+$script:fc.rates.thr_mid = '45'; $script:fc.rates.thr_expo = '40'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) CRV"; $o = Line $C.fix_ctl
+Check 'and it is what a drone with the old tool''s curve gets, not the builder''s' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '78' -and -not $o.Contains((T 'kv_thr_back')))
+
+# ---------------------------------------------------------------- throttle softer / sharper
+# the curve in the type's profile moves, by thr_expo only. One hung from the top (thr_mid 100)
+# gets softer with less expo
+$o = Line $C.thr_softer
+Check 'throttle softer on a top-hung curve takes 10 off the expo and keeps thr_mid' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '68' -and $o.Contains('100 / 78 -> 100 / 68') -and -not $o.Contains((T 'yn')))
+Check 'the new curve is in the type''s profile, both values' ((Preset 'CRV') -match 'set thr_expo = 68' -and (Preset 'CRV') -match 'set thr_mid = 100' -and -not ((Preset 'CRV') -match 'set thr_expo = 78'))
+$o = Line $C.thr_sharper
+Check 'throttle sharper undoes it' ((Val 'thr_expo') -eq '78' -and (Preset 'CRV') -match 'set thr_expo = 78')
+$o = Line $C.thr_slightly_softer
+Check 'slightly is half a step' ((Val 'thr_expo') -eq '73')
+$o = Line $C.thr_much_sharper
+Check 'much is a double step' ((Val 'thr_expo') -eq '93')
+$o = Line $C.thr_sharper; $before = $script:saves; $o = Line $C.thr_sharper
+Check 'the curve stops at the limit and nothing more is written' ((Val 'thr_expo') -eq '100' -and $script:saves -eq $before -and $o.Contains((T 'n_limit' (T 'kv_thr'))))
+$script:fc = New-FC 'ffff11110000222233334444' 'CRV20'
+$script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '60'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) CRV"; $o = Line $C.thr_softer
+Check 'the profile''s curve is the starting point, not what this drone happens to hold' ((Val 'thr_expo') -eq '90' -and $o.Contains('100 / 60 -> 100 / 90'))
+# a type with no curve in its profile starts from the drone's own; a curve bent around the
+# middle gets softer with MORE expo
+$script:fc = New-FC 'aaaa22220000222233334444' 'MID20'
+Set-Content (Join-Path $data 'presets\MID.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc.rates.thr_mid = '50'; $script:fc.rates.thr_expo = '20'
+$o = Line "$($C.bind) MID"; $o = Line $C.thr_softer
+Check 'a curve bent around the middle gets softer with more expo' ((Val 'thr_mid') -eq '50' -and (Val 'thr_expo') -eq '30' -and (Val 'roll_srate') -eq '15')
+Check 'a profile that had no curve now names both values' ((Preset 'MID') -match 'set thr_mid = 50' -and (Preset 'MID') -match 'set thr_expo = 30')
+$script:fc = New-FC 'bbbb22220000222233334444' 'OLD20'
+Set-Content (Join-Path $data 'presets\OLD.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc.rates.thr_mid = '45'; $script:fc.rates.thr_expo = '40'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) OLD"; $o = Line $C.thr_softer
+Check 'a drone with the old tool''s curve starts from what its other rate profiles hold' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '90' -and $o.Contains('45 / 40 -> 100 / 90'))
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)

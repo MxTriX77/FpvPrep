@@ -17,6 +17,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `set sound` (or `sound`) | Switches the buzzer and motor beacon off. |
 | `set name NAME` | Changes the name the drone shows on its OSD. Latin letters, digits, space and `_ . -`, up to 16 characters. |
 | `yaw more`, `pitch roll less`, `roll slightly more` | Adjusts rates in fixed steps. Shows old and new values and writes them. The change is remembered for the quad type; the opposite word undoes it. |
+| `throttle softer`, `throttle sharper` | Makes the type's throttle curve gentler or steeper around lift-off, 10 points of throttle expo a step (`slightly` 5, `much` 20). Shows old and new and writes them. Remembered for the quad type; the opposite word undoes it. |
 | `pid stiffer`, `pid softer` | Scales roll and pitch P, I and D together, 10 % of the drone's original values per step, from -2 to +3. Shows old and new values and a risk warning, and asks before applying. The level is remembered for the quad type. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |
 | `help`, `exit` | |
@@ -31,11 +32,15 @@ A PID worked out from assumed inertia and thrust lands a factor of 2-3 away from
 
 ## Safety limit
 
-`bf.ps1` refuses, before the port is opened, any command that could change switches, aux channels, adjustments, the channel map, receiver or failsafe settings, pin or resource mapping, servos, serial ports or features. It changes flight feel only: rates, PID, feedforward, stick smoothing and deadband, the OSD name, and beeps.
+`bf.ps1` refuses, before the port is opened, any command that could change switches, aux channels, adjustments, the channel map, receiver or failsafe settings, pin or resource mapping, servos, serial ports or features. It changes flight feel only: rates, PID, feedforward, the throttle curve, stick smoothing and deadband, the OSD name, and beeps.
 
-## Throttle is left alone
+## Throttle
 
-The tool never writes a throttle curve and has no throttle command. How much power a quad has in hand cannot be worked out from the bench, its builder has usually shaped the throttle for it, and a pilot adapts to each quad's throttle stick. One exception: an early version wrote its own curve (`thr_mid 45`, `thr_expo 40`) into the active rate profile. Where `set controls` still finds exactly that pair, it puts back what the drone's other rate profiles hold.
+The standard set holds no throttle curve. How much power a quad has in hand cannot be worked out from the bench, and its builder has usually shaped the throttle for it, so a new quad keeps the curve it came with.
+
+`throttle softer` and `throttle sharper` are for a type whose throttle is too jumpy, or too dull, around lift-off and landing. They move `thr_expo` only; `thr_mid` stays as built, so full stick is always full power. Which way is softer depends on the curve: one hung from the top (`thr_mid` 80 or more) is steepest at the bottom of the stick and gets softer with less expo; one bent around the middle gets softer with more. The starting point is the curve already saved for the type, or the drone's own if none is saved. The result is saved for the type (`set thr_mid`, `set thr_expo`), and `set controls` then gives it to every drone of that type. A softer curve moves lift-off a little higher on the stick.
+
+An early version wrote its own curve (`thr_mid 45`, `thr_expo 40`) into the active rate profile. Where `set controls` still finds exactly that pair and the type has no curve saved, it puts back what the drone's other rate profiles hold.
 
 Every session ends with the flight controller restarting. That is how Betaflight leaves command-line mode.
 

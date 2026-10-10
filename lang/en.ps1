@@ -167,6 +167,16 @@
     ok_remembered = 'remembered for every {0}.'
     b_done = '{0}  //  DONE  //  {1}'
 
+    # ---- throttle softer / throttle sharper
+    rx_thr = '^(throttle|thr)(\s+|$)'
+    rx_thr_softer = '\b(softer|soften)\b'
+    rx_thr_sharper = '\b(sharper|sharpen)\b'
+    n_thrwhat = 'throttle softer   /   throttle sharper'
+    r_thr = 'THROTTLE  //  {0}'; w_sharper = 'SHARPER'
+    s_readthr = 'reading the throttle curve'
+    f_nothr = 'throttle curve not found in the config'
+    kv_thr = 'throttle curve'
+
     # ---- pid stiffer / pid softer
     rx_pid = '^(pid)(\s+|$)'
     rx_stiffer = '\b(stiffer)\b'
@@ -202,6 +212,7 @@
         @('set name NAME         ', 'change the name shown on the OSD'),
         @(),
         @('yaw | pitch | roll   more | less   [slightly | much]', ''),
+        @('throttle   softer | sharper   [slightly | much]', ''),
         @('pid stiffer | softer  ', 'roll and pitch PID, 10% a step. risky'),
         @(),
         @('radio                 ', 'radio stick calibration'),
@@ -213,6 +224,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound'; old_fix = 'fix controls'; set_name = 'set name'
         yaw_more = 'yaw more'; pr_slightly_less = 'pitch roll slightly less'
         motors = 'motors'; motors_full = 'motors full'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle sharper'; thr_slightly_softer = 'throttle slightly softer'; thr_much_sharper = 'throttle much sharper'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }
