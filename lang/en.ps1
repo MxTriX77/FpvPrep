@@ -15,6 +15,8 @@
     rx_horizon = '^(horizon([\s_]*bar)?)(\s+|$)'
     rx_help   = '^(help|\?)$'
     rx_status = '^(status)\b'
+    rx_diff = '(^|\s)-?-?(diff|d)(\s|$)'
+    rx_restore = '^(restore)$'
     rx_radio  = '^(radio|tx12)\b'
     rx_exit   = '^(exit|quit|q)$'
     rx_radio_name = '^(TX12|radio)$'
@@ -179,6 +181,7 @@
     # ---- set controls -m: the editor
     r_edit = 'SET  //  CONTROLS BY HAND'
     ed_title = 'CONTROLS BY HAND'; ed_pidtitle = 'PID BY HAND'; r_pidedit = 'PID  //  BY HAND'
+    ed_thrtitle = 'THROTTLE CURVE BY HAND'; r_thredit = 'THROTTLE  //  BY HAND'; ed_thrmid = 'throttle mid'; ed_threxpo = 'throttle expo'
     ed_expo = '{0}, expo'
     ed_target = 'write to'
     ed_drone = 'this drone only'
@@ -213,6 +216,18 @@
 
     # ---- status, radio
     r_status = 'STATUS'
+    r_diff = 'STATUS  //  DIFF'
+    df_none = 'no saved copy of how this drone arrived'
+    df_bar = '{0}  //  CHANGED: {1} of {2}  //  {3}'
+    df_same_bar = '{0}  //  AS IT ARRIVED  //  {1}'
+    df_pid4 = '{0} P / I / D / Dmin'; df_pid2 = '{0} P / I'
+    df_deadband = 'deadband, sticks / yaw'
+    df_smooth = 'stick smoothing'
+    df_ff = 'feedforward, fade / jitter / boost'
+    df_times = '{0} x {1}'
+    r_restore = 'RESTORE'
+    n_restore_same = 'nothing to restore: the drone is as it arrived.'
+    b_restored = '{0}  //  RESTORED  //  {1}'
     s_readonly = 'reading config (nothing is changed)'
     kv_rates = '{0}, centre / full stick'; kv_ratefmt = 'rates format'
     r_radio = 'RADIO'
@@ -225,8 +240,8 @@
     # ---- help: two items = command and what it does, one item = a note, none = blank line
     r_help = 'COMMANDS'
     help = @(
-        @('bind "NAME"', 'find the drone on USB and write its stick settings'),
-        @('status', 'check the drone'),
+        @('bind "NAME"', 'find the drone on USB'),
+        @('status [ -diff ]', 'check the drone; -diff: what changed since it arrived'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
         @('set controls [ -m ]', 'write the stick settings; -m: type the rates by hand'),
@@ -236,10 +251,11 @@
         @('set name NAME', 'change the name shown on the OSD'),
         @(),
         @('yaw | pitch | roll  [ more | less ]', 'rates'),
-        @('throttle [ softer | stiffer ]', 'throttle curve'),
+        @('throttle [ softer | stiffer | -m ]', 'throttle curve; -m: type it by hand'),
         @('pid [ stiffer | softer | -m ]', 'roll and pitch PID, 10% a step; -m: type them by hand. risky'),
         @('say the word again for a bigger step:  yaw more more'),
         @(),
+        @('restore', 'put the drone back as it arrived'),
         @('radio', 'radio stick calibration'),
         @('help / exit', '')
     )
@@ -249,6 +265,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; diff = 'status -diff'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

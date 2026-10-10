@@ -10,7 +10,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 
 | Command | What it does |
 |---|---|
-| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. It saves a copy of the drone as it arrived, then goes straight on to `set controls`. NAME is whatever you call that kind of quad; no name = same as last time. |
+| `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. It saves a copy of the drone as it arrived and writes nothing to it. NAME is whatever you call that kind of quad; no name = same as last time. |
 | `status` | The drone's current rates, a health check, and a green / yellow / red verdict. Writes nothing. |
 | `motors`, `motors -N` | All four motors together at idle speed, for about 1 second or N seconds (up to 10). It runs the same with props on or off. With props on, keep hands and the USB cable clear: if the cable comes out mid-run the stop command cannot reach the drone, and only the battery plug stops the motors. |
 | `set controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, always in full, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |
@@ -22,6 +22,9 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `yaw more`, `pitch roll less`, `yaw more more` | Adjusts rates in fixed steps. Shows old and new values and writes them. The change is remembered for the quad type; the opposite word undoes it. Say the word again for that many steps at once. |
 | `throttle softer`, `throttle stiffer` | Makes the type's throttle gentler or sharper where it is worked: at lift-off and in flight. Shows old and new curve and writes it. Remembered for the quad type; the opposite word undoes it, and saying it again takes more steps at once. |
 | `pid stiffer`, `pid softer` | Scales roll and pitch P, I and D together, 10 % of the drone's original values per step, from -2 to +3. Shows old and new values and a risk warning, and asks before applying. The level is remembered for the quad type. |
+| `throttle -m` | The same editor on the two numbers of the throttle curve. |
+| `status -diff` | Every value the tool can change, one row each, compared with how the drone was when first bound. A changed row is marked, shown old -> new, with whole steps said in words (2 x softer). Writes nothing. |
+| `restore` | Puts the drone back as it was when first bound: shows what it will change, asks, then writes. The profile is not touched. |
 | `pid -m` | The same editor on the PID values the drone holds now (roll and pitch P, I, D, D min; yaw P and I), written as typed. Saved to the profile they become what every drone of the type gets, and what `pid stiffer` and `pid softer` scale from. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |
 | `help`, `exit` | |

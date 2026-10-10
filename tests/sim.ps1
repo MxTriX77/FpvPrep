@@ -39,7 +39,6 @@ function Line([string]$text, [string[]]$answers = @()) {
     if ($Show) { Write-Host $t }
     return $t
 }
-$script:bindWrites = $false   # most checks need the drone as it arrived; the last ones switch it back on
 $script:pass = 0; $script:fail = 0
 function Check([string]$what, [bool]$ok) {
     if ($ok) { $script:pass++; if ($Show) { Write-Host "  pass  $what" -ForegroundColor Green } }
@@ -379,14 +378,37 @@ $o = Line (Again $C.pid_stiffer 2) @('y')
 Check 'pid stiffer stiffer is two levels at once' ((Val 'p_roll') -eq '78' -and (Preset 'TWO') -match '# stiffness: 2')
 $o = Line (Again $C.pid_stiffer 4) @('y')
 Check 'more words than there are levels left stops at the last level' ((Val 'p_roll') -eq '85' -and (Preset 'TWO') -match '# stiffness: 3')
-# ---------------------------------------------------------------- bind goes straight on to set controls
-$script:bindWrites = $true
-Set-Content (Join-Path $data 'presets\GO.txt') -Encoding utf8 -Value @('# rates', 'set roll_srate = 27', 'set yaw_srate = 31')
-$script:fc = New-FC 'ffff33330000222233334444' 'GO20'
-$before = $script:saves; $o = Line "$($C.bind) GO"
-Check 'bind shows the drone, then writes the type''s settings and confirms them' ((Val 'roll_srate') -eq '27' -and (Val 'yaw_srate') -eq '31' -and $script:saves -eq $before + 1 -and $o.Contains(((T 'b_bound') -f 'GO ffff3333', '').Substring(0, 18)) -and $o.Contains((T 'r_fix' (T 'w_ctl'))) -and $o.Contains((T 'ok_confirmed' 2)))
-Check 'the copy of how the drone arrived is taken before anything is written' ((Get-Content (Get-ChildItem (Join-Path $data 'quads') -Filter '*_ffff3333_before.txt').FullName -Raw) -match 'set roll_srate = 15')
-$script:bindWrites = $false
+# ---------------------------------------------------------------- throttle -m: the curve by hand
+Set-Content (Join-Path $data 'presets\THM.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc = New-FC 'bbbb44440000222233334444' 'THM20'
+$script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'
+$o = Line "$($C.bind) THM"
+$script:typed = @{ thr_expo = '65' }; $script:toProfile = $true
+$o = Line $C.thr_edit
+Check 'throttle -m opens on the drone''s curve, writes what is typed and saves both values' ($script:opened -contains 'thr_mid=100' -and $script:opened -contains 'thr_expo=100' -and $script:opened.Count -eq 2 -and (Val 'thr_expo') -eq '65' -and (Val 'thr_mid') -eq '100' -and $o.Contains('100 / 100 -> 100 / 65') -and (Preset 'THM') -match 'set thr_mid = 100' -and (Preset 'THM') -match 'set thr_expo = 65')
+$script:typed = @{ thr_expo = '101' }
+Check 'a value outside 0 to 100 is refused by the editor' ((Edit-Check @(@{ key = 'thr_mid'; label = 'm'; min = 0; max = 100; text = '100' }, @{ key = 'thr_expo'; label = 'e'; min = 0; max = 100; text = '101' })) -eq (T 'ed_bad' 'e' 0 100))
+$script:typed = @{}
+
+# ---------------------------------------------------------------- status -diff and restore
+Set-Content (Join-Path $data 'presets\DIF.txt') -Encoding utf8 -Value @('# rates and a curve', 'set roll_rc_rate = 5', 'set roll_srate = 22', 'set thr_mid = 100', 'set thr_expo = 100')
+$script:fc = New-FC 'aaaa44440000222233334444' 'DIF20'
+$script:fc.rates.thr_mid = '100'; $script:fc.rates.thr_expo = '100'; $script:fc.otherThr = @('100', '100')
+$o = Line "$($C.bind) DIF"; $before = $script:saves; $o = Line $C.diff
+Check 'status -diff on an untouched drone: every value, nothing marked, nothing written' ((Has $o 'r_diff') -and $o.Contains('70 / 150') -and $o.Contains(((T 'df_same_bar') -f 'DIF aaaa4444', '').Substring(0, 24)) -and -not $o.Contains('=> ') -and $script:saves -eq $before)
+$o = Line $C.fix_ctl; $o = Line (Again $C.thr_softer 2); $o = Line $C.pid_stiffer @('y'); $o = Line $C.diff
+Check 'a changed value is marked and shown old -> new' ($o.Contains('=> ') -and ($o -match '70 / 150 \S+\s+->\s+50 / 220') -and $o.Contains(((T 'df_bar') -f 'DIF aaaa4444', 4, 0, '').Substring(0, 30)))
+Check 'steps are said in words: 2 x softer, 1 x stiffer' ($o.Contains((T 'df_times' 2 (T 'w_softer').ToLower())) -and $o.Contains((T 'df_times' 1 (T 'w_stiffer').ToLower())) -and ($o -match '100 / 100\s+->\s+100 / 80'))
+$before = $script:saves; $o = Line $C.restore @('n')
+Check 'restore lists what it will put back and asks first' ($o.Contains('50 / 220') -and (Has $o 'q_apply') -and $script:saves -eq $before -and (Val 'roll_srate') -eq '22')
+$o = Line $C.restore @('y')
+Check 'restore puts the drone back as it arrived' ((Val 'roll_rc_rate') -eq '7' -and (Val 'roll_srate') -eq '15' -and (Val 'thr_expo') -eq '100' -and (Val 'p_roll') -eq '65' -and (Val 'd_pitch') -eq '65' -and $o.Contains(((T 'b_restored') -f 'DIF aaaa4444', '').Substring(0, 24)))
+Check 'and leaves the profile alone' ((Preset 'DIF') -match 'set thr_expo = 80' -and (Preset 'DIF') -match '# stiffness: 1')
+$before = $script:saves; $o = Line $C.restore @('y')
+Check 'a second restore has nothing to do' ((Has $o 'n_restore_same') -and $script:saves -eq $before)
+[IO.File]::Delete((Join-Path $data 'quads\orig_aaaa4444.txt'))
+$o = Line $C.fix_ctl; $o = Line $C.diff
+Check 'a drone bound by an older version is compared with its saved before listing' ($o.Contains('=> ') -and ($o -match '100 / 100\s+->\s+100 / 80') -and -not $o.Contains('50 / 220'))
 
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard

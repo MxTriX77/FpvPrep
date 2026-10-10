@@ -27,14 +27,14 @@ if ($To) { if ($Lang.Count -ne 1 -or $MockOnly) { throw '-To needs exactly one -
 $ps = 'powershell.exe'; $psArgs = '-NoProfile', '-ExecutionPolicy', 'Bypass'
 
 # Opens one launcher in its own console, types the lines, returns the screen text
-function Try-Launcher([string]$cmd, [string[]]$type, [string]$exitWord) {
+function Try-Launcher([string]$cmd, [string[]]$type, [string]$exitWord, [int]$settle = 9000) {
     $out = Join-Path $env:TEMP "fpvprep_screen_$PID.txt"
     if (Test-Path $out) { [IO.File]::Delete($out) }
     $typed = ($type | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ','
-    $line = "& '$(Join-Path $src 'tests\console.ps1')' -Launcher '$cmd' -Type $typed -Exit '$exitWord' -Out '$out'"
+    $line = "& '$(Join-Path $src 'tests\console.ps1')' -Launcher '$cmd' -Type $typed -Exit '$exitWord' -Out '$out' -SettleMs $settle"
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($line))
     $h = Start-Process $ps -ArgumentList ($psArgs + '-EncodedCommand', $enc) -WindowStyle Hidden -PassThru
-    [void]$h.WaitForExit(90000)
+    [void]$h.WaitForExit(90000 + $settle)
     $text = ''; if (Test-Path $out) { $text = (Get-Content $out -Encoding UTF8) -join "`n"; [IO.File]::Delete($out) }
     return $text
 }
@@ -85,7 +85,8 @@ foreach ($l in $Lang) {
         # the mock looks exactly like the release on screen: only its folder and file name say what it is
         Write-Launcher $mockCmd 'FPV PREP' 'mock\mock.ps1' $l '-Plain '
         "   mock:    $mockCmd"
-        $s = Try-Launcher $mockCmd @("$($w.bind) $($w.odd_name)", $w.status, $w.status, $w.status) $w.exit
+        # bind goes on to write the settings, and the pretend drone takes its time restarting
+        $s = Try-Launcher $mockCmd @("$($w.bind) $($w.odd_name)", $w.status, $w.status, $w.status) $w.exit 40000
         $ok = $s.Contains('closed-on-exit-word=True') -and $s.Contains($txt['good_status']) -and $s.Contains(($txt['v_warn'] -f '', '').Trim(' /')) -and $s.Contains(($txt['v_fail'] -f '', '').Trim(' /'))
         "   mock in a real window (bind, status x3: green, yellow, red, exit): " + $(if ($ok) { 'OK' } else { 'FAILED' })
         if (-not $ok) { $failed += "$l mock" }

@@ -448,7 +448,7 @@ function Acquire {
 # ---------------------------------------------------------------- bind
 # Find the drone on USB and show what it is. Nothing more: the check is "status", and nothing
 # is written to the drone.
-$script:bindWrites = $true   # tests switch this off where they need a drone left as it arrived
+# bind only reads: it shows the drone and records how it arrived. It never writes to it.
 function Do-Bind([string]$rest) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $r = Parse-Target $rest
@@ -468,6 +468,7 @@ function Do-Bind([string]$rest) {
     if (-not @(Get-ChildItem $quads -Filter "*_${id}_before.txt").Count) {
         Set-Content (Join-Path $quads "$(Get-Date -Format 'yyyy-MM-dd')_${name}_${id}_before.txt") $d.diff -Encoding utf8
     }
+    Save-Orig $d
     Set-Content (Join-Path $quads 'last.txt') $name -Encoding utf8
     $script:cur = @{ id = $id; name = $name; craft = $d.craft }
 
@@ -480,8 +481,6 @@ function Do-Bind([string]$rest) {
     Log "$name $id bind"
     Write-Host ''
     Bar (T 'b_bound' "$NAME $id" (Took $clock)) 'Green'
-    # prep is always bind and then set controls, so bind goes straight on to it (user, 2026-10-10)
-    if ($script:bindWrites) { Do-Fix '*controls' }
 }
 
 # ---------------------------------------------------------------- set
@@ -491,7 +490,7 @@ function Do-Bind([string]$rest) {
 function Do-Fix([string]$rest) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $low = $rest.ToLower()
-    $ctl = ($low -match $script:STR['rx_ctl']) -or $rest -eq '*controls'; $snd = $low -match $script:STR['rx_snd']
+    $ctl = $low -match $script:STR['rx_ctl']; $snd = $low -match $script:STR['rx_snd']
     if (-not ($ctl -or $snd)) { Note (T 'n_fixwhat'); return }
     $what = @(); if ($ctl) { $what += (T 'w_ctl') }; if ($snd) { $what += (T 'w_snd') }
 
@@ -913,7 +912,38 @@ function Thr-Softest([int]$mid) {
     for ($e = 0; $e -le 100; $e++) { $trav = Thr-Travel $mid $e; if ($trav -gt $widest + 1e-9) { $widest = $trav; $best = $e } }
     return $best
 }
-function Do-Throttle([int]$dir, [int]$times) {
+# throttle -m: the same editor on the two numbers of the throttle curve the drone holds now.
+# Written as typed; saved to the profile, both values go to every drone of the type.
+function Do-ThrEdit {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Rule (T 'r_thredit')
+    if (-not (Acquire)) { return }
+    Step (T 's_readthr')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $name = Name-For $id
+    if (-not $name) { Fail (T 'f_unknown'); return }
+    $NAME = $name.ToUpper()
+    Kv (T 'kv_drone') "$NAME $id"
+    if ($null -eq $d.vals['thr_mid'] -or $null -eq $d.vals['thr_expo']) { Fail (T 'f_nothr'); return }
+    $fields = @(
+        @{ key = 'thr_mid'; group = 'thr'; label = (T 'ed_thrmid'); unit = ''; mul = 1; step = 5; min = 0; max = 100; text = "$([int]$d.vals['thr_mid'])" },
+        @{ key = 'thr_expo'; group = 'thr'; label = (T 'ed_threxpo'); unit = ''; mul = 1; step = 5; min = 0; max = 100; text = "$([int]$d.vals['thr_expo'])" })
+    $r = Edit-Screen $fields "$NAME $id" $NAME (T 'ed_thrtitle')
+    if ($null -eq $r) { Note (T 'n_nothing'); return }
+    $plan = [ordered]@{ thr_mid = [int]$fields[0].text; thr_expo = [int]$fields[1].text }
+    Kv (T 'kv_thr') "$([int]$d.vals['thr_mid']) / $([int]$d.vals['thr_expo']) -> $($plan.thr_mid) / $($plan.thr_expo)"
+    $script:cur = @{ id = $id; name = $name; craft = $d.craft }
+    if (-not (Write-And-Verify $name $id $plan @())) {
+        Log "$name $id throttle edit NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    if ($r.toProfile) { Remember $name $plan } else { Ok (T 'ok_drone_only') }
+    Log "$name $id throttle edit profile=$($r.toProfile) $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
+}function Do-Throttle([int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_stiffer') }
     Rule (T 'r_thr' $word)
@@ -1119,6 +1149,175 @@ function Do-Status {
     Verdict $sev $who (T 'good_status') $clock
 }
 
+# ---------------------------------------------------------------- status -diff, restore
+# What the tool can change on a drone, and so what is compared with how the drone arrived.
+$trackKeys = @('rates_type') + @('roll', 'pitch', 'yaw' | ForEach-Object { "${_}_rc_rate"; "${_}_srate"; "${_}_expo" }) +
+             'thr_mid', 'thr_expo', 'p_roll', 'i_roll', 'd_roll', 'd_min_roll', 'p_pitch', 'i_pitch', 'd_pitch', 'd_min_pitch', 'p_yaw', 'i_yaw',
+             'deadband', 'yaw_deadband', 'rc_smoothing_auto_factor', 'feedforward_transition', 'feedforward_jitter_factor', 'feedforward_boost',
+             'osd_stick_overlay_left_pos', 'osd_stick_overlay_right_pos', 'osd_stick_overlay_radio_mode', 'osd_ah_pos', 'craft_name'
+# The values of a config listing, taken from its active PID profile and active rate profile
+function Config-Values($lines) {
+    $master = @{}; $prof = @{}; $rate = @{}; $sec = 'm'; $n = '0'; $actP = $null; $actR = $null; $restore = ''
+    foreach ($l in $lines) {
+        $l = "$l".Trim()
+        if ($l -match '^# restore original (rate)?profile') { $restore = 'p'; if ($Matches[1]) { $restore = 'r' }; continue }
+        if ($l -match '^profile (\d+)$') { if ($restore -eq 'p') { $actP = $Matches[1]; $restore = '' } else { $sec = 'p'; $n = $Matches[1]; if (-not $prof[$n]) { $prof[$n] = @{} } }; continue }
+        if ($l -match '^rateprofile (\d+)$') { if ($restore -eq 'r') { $actR = $Matches[1]; $restore = '' } else { $sec = 'r'; $n = $Matches[1]; if (-not $rate[$n]) { $rate[$n] = @{} } }; continue }
+        if ($l -match '^set (\w+) = (.*)$') {
+            if ($sec -eq 'm') { $master[$Matches[1]] = $Matches[2].Trim() } elseif ($sec -eq 'p') { $prof[$n][$Matches[1]] = $Matches[2].Trim() } else { $rate[$n][$Matches[1]] = $Matches[2].Trim() }
+        }
+    }
+    if ($null -eq $actP) { $actP = @($prof.Keys | Sort-Object)[0] }
+    if ($null -eq $actR) { $actR = @($rate.Keys | Sort-Object)[0] }
+    $vals = @{}
+    foreach ($k in $master.Keys) { $vals[$k] = $master[$k] }
+    if ($actP -and $prof[$actP]) { foreach ($k in $prof[$actP].Keys) { $vals[$k] = $prof[$actP][$k] } }
+    if ($actR -and $rate[$actR]) { foreach ($k in $rate[$actR].Keys) { $vals[$k] = $rate[$actR][$k] } }
+    return $vals
+}
+# How the drone arrived: quads\orig_<id>.txt, written at its first bind from the full reading.
+# A drone bound by an older version has only its saved "before" listing, which leaves out values
+# that were at firmware default; those stay unknown and are neither compared nor restored.
+function Save-Orig($d) {
+    $file = Join-Path $quads "orig_$($d.id).txt"
+    if (Test-Path $file) { return }
+    $h = [ordered]@{}; foreach ($k in $trackKeys) { if ($null -ne $d.vals[$k]) { $h[$k] = $d.vals[$k] } }
+    Write-Settings $file $h @('# What this drone held when it was first bound')
+}
+function Orig-Values([string]$id) {
+    $file = Join-Path $quads "orig_$id.txt"
+    if (Test-Path $file) { return (Read-Settings $file) }
+    $before = @(Get-ChildItem $quads -Filter "*_${id}_before.txt" | Sort-Object LastWriteTime | Select-Object -First 1)
+    if (-not $before.Count) { return $null }
+    $v = Config-Values (Get-Content $before[0].FullName -Encoding UTF8)
+    $h = [ordered]@{}; foreach ($k in $trackKeys) { if ($null -ne $v[$k]) { $h[$k] = $v[$k] } }
+    return $h
+}
+# The rows of the comparison: a label, the settings behind it, and how to show their values
+function Diff-Rows {
+    $rows = @()
+    $dps = (T 'unit_dps')
+    $vis = { param($v) if ((([int]$v) -band 0x3800) -ne 0) { (T 'w_on').ToLower() } else { (T 'w_off').ToLower() } }
+    foreach ($a in 'roll', 'pitch', 'yaw') {
+        $label = (T "ax_$a").ToLower()
+        $rows += @{ label = (T 'kv_rates' $label); keys = @("${a}_rc_rate", "${a}_srate"); show = { param($h, $k) "$([int]$h[$k[0]] * 10) / $([int]$h[$k[1]] * 10) $dps" }.GetNewClosure() }
+        $rows += @{ label = (T 'ed_expo' $label); keys = @("${a}_expo"); show = { param($h, $k) "$($h[$k[0]])" } }
+    }
+    $rows += @{ label = (T 'kv_thr'); keys = @('thr_mid', 'thr_expo'); show = { param($h, $k) "$($h[$k[0]]) / $($h[$k[1]])" }; kind = 'thr' }
+    foreach ($a in 'roll', 'pitch') { $rows += @{ label = (T 'df_pid4' (T "ax_$a").ToLower()); keys = @("p_$a", "i_$a", "d_$a", "d_min_$a"); show = { param($h, $k) (($k | ForEach-Object { $h[$_] }) -join ' / ') }; kind = 'pid' } }
+    $rows += @{ label = (T 'df_pid2' (T 'ax_yaw').ToLower()); keys = @('p_yaw', 'i_yaw'); show = { param($h, $k) "$($h[$k[0]]) / $($h[$k[1]])" } }
+    $rows += @{ label = (T 'df_deadband'); keys = @('deadband', 'yaw_deadband'); show = { param($h, $k) "$($h[$k[0]]) / $($h[$k[1]])" } }
+    $rows += @{ label = (T 'df_smooth'); keys = @('rc_smoothing_auto_factor'); show = { param($h, $k) "$($h[$k[0]])" } }
+    $rows += @{ label = (T 'df_ff'); keys = @('feedforward_transition', 'feedforward_jitter_factor', 'feedforward_boost'); show = { param($h, $k) (($k | ForEach-Object { $h[$_] }) -join ' / ') } }
+    $rows += @{ label = (T 'kv_sticks'); keys = @('osd_stick_overlay_left_pos'); show = { param($h, $k) & $vis $h[$k[0]] }.GetNewClosure() }
+    $rows += @{ label = (T 'kv_horizon'); keys = @('osd_ah_pos'); show = { param($h, $k) & $vis $h[$k[0]] }.GetNewClosure() }
+    $rows += @{ label = (T 'kv_osdname'); keys = @('craft_name'); show = { param($h, $k) "$($h[$k[0]])" } }
+    return $rows
+}
+# In words, where the change is a whole number of the tool's own steps: "2 x softer"
+function Diff-Steps($row, $orig, $now) {
+    if ($row.kind -eq 'thr' -and "$($orig['thr_mid'])" -eq "$($now['thr_mid'])") {
+        $from = [int]$orig['thr_expo']; $to = [int]$now['thr_expo']; $gap = [Math]::Abs($to - $from)
+        if ($gap -gt 0 -and $gap % 10 -eq 0) {
+            $best = Thr-Softest ([int]$now['thr_mid'])
+            $word = (T 'w_stiffer'); if ([Math]::Abs($to - $best) -lt [Math]::Abs($from - $best)) { $word = (T 'w_softer') }
+            return (T 'df_times' ($gap / 10) $word.ToLower())
+        }
+    }
+    if ($row.kind -eq 'pid') {
+        $base = [ordered]@{}; foreach ($k in $row.keys) { $base[$k] = $orig[$k] }
+        foreach ($lvl in -2, -1, 1, 2, 3) {
+            $w = Pid-Wanted $base $lvl
+            if (-not @($row.keys | Where-Object { "$($w[$_])" -ne "$($now[$_])" }).Count) {
+                $word = (T 'w_stiffer'); if ($lvl -lt 0) { $word = (T 'w_softer') }
+                return (T 'df_times' ([Math]::Abs($lvl)) $word.ToLower())
+            }
+        }
+    }
+    return ''
+}
+# Compares the drone with how it arrived. Returns the rows with .old, .new and .changed filled in.
+function Diff-Compare($d, $orig) {
+    $rows = Diff-Rows
+    foreach ($r in $rows) {
+        $known = -not @($r.keys | Where-Object { $null -eq $orig[$_] -or $null -eq $d.vals[$_] }).Count
+        $r.known = $known; $r.changed = $false
+        if (-not $known) { continue }
+        $r.old = & $r.show $orig $r.keys; $r.new = & $r.show $d.vals $r.keys
+        $r.changed = [bool]@($r.keys | Where-Object { "$($orig[$_])" -ne "$($d.vals[$_])" }).Count
+        if ($r.changed) { $r.steps = Diff-Steps $r $orig $d.vals }
+    }
+    return $rows
+}
+# One row: an unchanged value dim; a changed one marked in front, old -> new, the new value lit
+function Diff-Line($r) {
+    Close-Pending
+    if (-not $r.changed) {
+        $dots = $WIDTH - $IND.Length - $r.label.Length - $r.new.Length - 2; if ($dots -lt 2) { $dots = 2 }
+        Write-Host "$IND$($r.label) " -ForegroundColor DarkGray -NoNewline
+        Write-Host ('.' * $dots) -ForegroundColor DarkGray -NoNewline
+        Write-Host " $($r.new)" -ForegroundColor Gray
+        return
+    }
+    $tail = ''; if ($r.steps) { $tail = "  $($r.steps)" }
+    $dots = $WIDTH - $IND.Length - $r.label.Length - $r.old.Length - $r.new.Length - $tail.Length - 8; if ($dots -lt 2) { $dots = 2 }
+    Write-Host '  => ' -ForegroundColor Yellow -NoNewline   # not >>, which is how a step line starts
+    Write-Host "$($r.label) " -ForegroundColor White -NoNewline
+    Write-Host ('.' * $dots) -ForegroundColor DarkGray -NoNewline
+    Write-Host " $($r.old)" -ForegroundColor DarkGray -NoNewline
+    Write-Host ' -> ' -ForegroundColor Yellow -NoNewline
+    Write-Host " $($r.new) " -ForegroundColor Black -BackgroundColor Yellow -NoNewline
+    Write-Host $tail -ForegroundColor Yellow
+}
+function Do-Diff {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Rule (T 'r_diff')
+    if (-not (Acquire)) { return }
+    Step (T 's_readonly')
+    $d = Read-Drone
+    if (-not $d.id) { Fail (T 'f_noread'); return }
+    $name = Name-For $d.id
+    $who = $d.id; if ($name) { $who = "$($name.ToUpper()) $($d.id)" }
+    Kv (T 'kv_drone') $who
+    $orig = Orig-Values $d.id
+    if ($null -eq $orig) { Fail (T 'df_none'); return }
+    $rows = @(Diff-Compare $d $orig | Where-Object { $_.known })
+    foreach ($r in $rows) { Diff-Line $r }
+    $n = @($rows | Where-Object { $_.changed }).Count
+    Write-Host ''
+    if ($n) { Bar (T 'df_bar' $who $n $rows.Count (Took $clock)) 'Yellow' } else { Bar (T 'df_same_bar' $who (Took $clock)) 'Green' }
+}
+# restore: write back what the drone held when it was first bound. The drone only; the profile
+# is not touched.
+function Do-Restore {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Rule (T 'r_restore')
+    if (-not (Acquire)) { return }
+    Step (T 's_readdrone')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $name = Name-For $id; if (-not $name) { $name = 'drone' }
+    $who = "$($name.ToUpper()) $id"
+    Kv (T 'kv_drone') $who
+    $orig = Orig-Values $id
+    if ($null -eq $orig) { Fail (T 'df_none'); return }
+    $rows = @(Diff-Compare $d $orig | Where-Object { $_.changed })
+    if (-not $rows.Count) { Note (T 'n_restore_same'); return }
+    $plan = [ordered]@{}
+    foreach ($r in $rows) {
+        Kv $r.label "$($r.new) -> $($r.old)" 'Yellow'
+        foreach ($k in $r.keys) { if ("$($orig[$k])" -ne "$($d.vals[$k])") { $plan[$k] = $orig[$k] } }
+    }
+    if (-not (Ask (T 'q_apply'))) { Note (T 'n_nothing'); return }
+    if (-not (Write-And-Verify $name $id $plan @())) {
+        Log "$name $id restore NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    Log "$name $id restore $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_restored' $who (Took $clock)) 'Green'
+}
 # The radio in USB storage mode: ONLY the stick calibration is read, nothing is changed
 function Do-Radio {
     Rule (T 'r_radio')
@@ -1174,10 +1373,12 @@ function Dispatch([string]$line) {
         elseif ($low -match $script:STR['rx_thr']) {
             # its own words too, and also ahead of the axis words
             $rest = $low.Substring($Matches[0].Length)
-            if ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 (Times $rest 'rx_thr_softer') } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 (Times $rest 'rx_thr_sharper') } else { Note (T 'n_thrwhat') }
+            if ($rest -match '(^|\s)-m(\s|$)') { Do-ThrEdit }
+            elseif ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 (Times $rest 'rx_thr_softer') } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 (Times $rest 'rx_thr_sharper') } else { Note (T 'n_thrwhat') }
         }
         elseif ($low -match $script:STR['rx_help']) { Help }
-        elseif ($low -match $script:STR['rx_status']) { Do-Status }
+        elseif ($low -match $script:STR['rx_status']) { if ($low -match $script:STR['rx_diff']) { Do-Diff } else { Do-Status } }
+        elseif ($low -match $script:STR['rx_restore']) { Do-Restore }
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {
             $axes = @()
