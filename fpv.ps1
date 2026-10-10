@@ -955,7 +955,9 @@ function Help {
     foreach ($h in $script:STR['help']) {
         if ($h.Count -eq 0) { Write-Host ''; continue }
         if ($h.Count -eq 1) { Note $h[0]; continue }
-        Write-Host $IND -NoNewline; Write-Host $h[0].TrimEnd().PadRight($wide) -ForegroundColor Cyan -NoNewline; Write-Host $h[1] -ForegroundColor Gray
+        # the command word in one colour, its [ options ] in a dimmer one
+        $cmd = $h[0].TrimEnd().PadRight($wide); $cut = $cmd.IndexOf('['); if ($cut -lt 0) { $cut = $cmd.Length }
+        Write-Host $IND -NoNewline; Write-Host $cmd.Substring(0, $cut) -ForegroundColor Cyan -NoNewline; Write-Host $cmd.Substring($cut) -ForegroundColor DarkCyan -NoNewline; Write-Host $h[1] -ForegroundColor Gray
     }
 }
 
