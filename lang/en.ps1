@@ -217,6 +217,10 @@
     # ---- status, radio
     r_status = 'STATUS'
     r_diff = 'STATUS  //  DIFF'
+    r_profile = 'STATUS  //  PROFILE {0}'
+    pf_bar = '{0}  //  PROFILE  //  {1} rows'
+    pf_diff_bar = '{0}  //  DIFFERS FROM THE STANDARD: {1} of {2}'
+    pf_same_bar = '{0}  //  SAME AS THE STANDARD'
     df_none = 'no saved copy of how this drone arrived'
     df_bar = '{0}  //  CHANGED: {1} of {2}  //  {3}'
     df_same_bar = '{0}  //  AS IT ARRIVED  //  {1}'
@@ -242,6 +246,7 @@
     help = @(
         @('bind "NAME"', 'find the drone on USB'),
         @('status [ -diff ]', 'check the drone; -diff: what changed since it arrived'),
+        @('status -p NAME [ -diff ]', 'a saved profile, no drone needed; -diff: against the standard'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
         @('set controls [ -m ]', 'write the stick settings; -m: type the rates by hand'),
@@ -265,6 +270,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

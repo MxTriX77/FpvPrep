@@ -421,6 +421,14 @@ Check 'a second restore has nothing to do' ((Has $o 'n_restore_same') -and $scri
 $o = Line $C.fix_ctl; $o = Line $C.diff
 Check 'a drone bound by an older version is compared with its saved before listing' ($o.Contains('=> ') -and ($o -match '100 / 100\s+->\s+100 / 80') -and -not $o.Contains('50 / 220'))
 
+# ---------------------------------------------------------------- status -p NAME: a saved profile, no drone
+$n0 = $script:sent.Count; $o = Line "$($C.prof) dif"
+Check 'status -p NAME shows what the profile holds without touching USB' ($script:sent.Count -eq $n0 -and $o.Contains((T 'r_profile' 'DIF')) -and $o.Contains('50 / 220') -and $o.Contains('100 / 80') -and $o.Contains('+1') -and -not $o.Contains('=> '))
+$o = Line "$($C.prof) DIF -diff"
+Check 'with -diff it is set against the standard and what differs is marked' ($script:sent.Count -eq $n0 -and $o.Contains('=> ') -and ($o -match '->\s+100 / 80') -and $o.Contains(((T 'pf_diff_bar') -f 'DIF', 0, 0).Substring(0, 12)))
+$o = Line "$($C.prof) NOSUCH"
+Check 'a name with no profile is said so' ($o.Contains((T 'f_nopreset' 'NOSUCH')) -and $script:sent.Count -eq $n0)
+
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)

@@ -1271,7 +1271,39 @@ function Diff-Line($r) {
     Write-Host " $($r.new) " -ForegroundColor Black -BackgroundColor Yellow -NoNewline
     Write-Host $tail -ForegroundColor Yellow
 }
-function Do-Diff {
+# status -p NAME [-diff]: what a saved profile holds, read from its file. No drone, no USB.
+# With -diff it is set against the standard set: what was tuned away from it is marked.
+function Do-Profile([string]$name, [bool]$diff) {
+    if (-not $name) { $name = Last-Name }
+    if (-not $name) { Fail (T 'f_which'); return }
+    $NAME = $name.ToUpper()
+    Rule (T 'r_profile' $NAME)
+    $file = Join-Path $presets "$name.txt"
+    if (-not (Test-Path $file)) { Fail (T 'f_nopreset' $NAME); return }
+    $own = Read-Settings $file; $std = Read-Settings $stdFile
+    $rows = @()
+    foreach ($r in (Diff-Rows)) {
+        if (@($r.keys | Where-Object { $null -eq $own[$_] }).Count) { continue }
+        $r.new = & $r.show $own $r.keys; $r.old = '-'; $r.changed = $false
+        if ($diff) {
+            $inStd = -not @($r.keys | Where-Object { $null -eq $std[$_] }).Count
+            if ($inStd) { $r.old = & $r.show $std $r.keys }
+            $r.changed = (-not $inStd) -or [bool]@($r.keys | Where-Object { "$($std[$_])" -ne "$($own[$_])" }).Count
+        }
+        $rows += $r
+    }
+    # the choices kept as lines of their own: PID level, sticks, horizon, sound
+    $level = Stiff-Level $name
+    foreach ($m in @(@((T 'kv_level'), $(if ($level -ne 0) { Signed $level } else { '' })), @((T 'kv_sticks'), (Mark-Saved $name 'sticks')), @((T 'kv_horizon'), (Mark-Saved $name 'horizon')), @((T 'done_snd'), (Mark-Saved $name 'sound')))) {
+        if (-not $m[1]) { continue }
+        $val = $m[1]; if ($val -eq 'on') { $val = (T 'w_on').ToLower() } elseif ($val -eq 'off') { $val = (T 'w_off').ToLower() }
+        $rows += @{ label = $m[0]; new = $val; old = '-'; changed = $diff; steps = '' }
+    }
+    foreach ($r in $rows) { Diff-Line $r }
+    Write-Host ''
+    $n = @($rows | Where-Object { $_.changed }).Count
+    if ($diff -and $n) { Bar (T 'pf_diff_bar' $NAME $n $rows.Count) 'Yellow' } elseif ($diff) { Bar (T 'pf_same_bar' $NAME) 'Green' } else { Bar (T 'pf_bar' $NAME $rows.Count) 'DarkCyan' }
+}function Do-Diff {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_diff')
     if (-not (Acquire)) { return }
@@ -1379,7 +1411,11 @@ function Dispatch([string]$line) {
             elseif ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 (Times $rest 'rx_thr_softer') } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 (Times $rest 'rx_thr_sharper') } else { Note (T 'n_thrwhat') }
         }
         elseif ($low -match $script:STR['rx_help']) { Help }
-        elseif ($low -match $script:STR['rx_status']) { if ($low -match $script:STR['rx_diff']) { Do-Diff } else { Do-Status } }
+        elseif ($low -match $script:STR['rx_status']) {
+            # -p NAME: a saved profile, no drone needed. The name keeps the letters as typed.
+            if ($line -match '(?i)(^|\s)-p(\s+("([^"]+)"|([^-\s]\S*)))?(\s|$)') { Do-Profile ("$($Matches[4])$($Matches[5])") ([bool]($low -match $script:STR['rx_diff'])) }
+            elseif ($low -match $script:STR['rx_diff']) { Do-Diff } else { Do-Status }
+        }
         elseif ($low -match $script:STR['rx_restore']) { Do-Restore }
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {

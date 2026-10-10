@@ -25,6 +25,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `yaw -m`, `pitch roll -m` | The rates editor for just the axes named. |
 | `throttle -m` | The same editor on the two numbers of the throttle curve. |
 | `status -diff` | Every value the tool can change, one row each, compared with how the drone was when first bound. A changed row is marked, shown old -> new, with whole steps said in words (2 x softer). Writes nothing. |
+| `status -p NAME`, `status -p NAME -diff` | What a saved profile holds, read from its file: no drone and no USB needed. With `-diff` it is set against the standard set and what differs is marked. |
 | `restore` | Puts the drone back as it was when first bound: shows what it will change, asks, then writes. The profile is not touched. |
 | `pid -m` | The same editor on the PID values the drone holds now (roll and pitch P, I, D, D min; yaw P and I), written as typed. Saved to the profile they become what every drone of the type gets, and what `pid stiffer` and `pid softer` scale from. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |

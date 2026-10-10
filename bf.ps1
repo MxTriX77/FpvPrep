@@ -19,22 +19,40 @@ $forbidden = '^(defaults|aux|adjrange|rxrange|rxfail|map|resource|serial|feature
 $blocked = @($Commands | ForEach-Object { $_.Trim() } | Where-Object { $_ -match $forbidden })
 if ($blocked.Count) { throw "Refused, not a flight-feel setting: $($blocked -join ' | ')" }
 
-if (-not $Port) {
-    # Windows can list the same port twice right after the FC reboots
-    $ports = @([System.IO.Ports.SerialPort]::GetPortNames() | Select-Object -Unique)
-    if ($ports.Count -eq 0) { throw 'No serial port found. Is the drone plugged in by USB?' }
-    if ($ports.Count -gt 1) { throw "Several ports found ($($ports -join ', ')). Pass -Port COMx." }
-    $Port = $ports[0]
+function Open-Port([string]$name) {
+    $p = New-Object System.IO.Ports.SerialPort $name, 115200, 'None', 8, 'One'
+    $p.DtrEnable = $true; $p.RtsEnable = $true; $p.ReadTimeout = 200; $p.NewLine = "`n"
+    $p.Open(); return $p
 }
-
-$sp = New-Object System.IO.Ports.SerialPort $Port, 115200, 'None', 8, 'One'
-$sp.DtrEnable = $true
-$sp.RtsEnable = $true
-$sp.ReadTimeout = 200
-$sp.NewLine = "`n"
-try { $sp.Open() }
-catch { throw "$Port is busy. Press Disconnect in Betaflight Configurator (the app can stay open), then retry." }
-
+$sp = $null
+if ($Port) {
+    try { $sp = Open-Port $Port }
+    catch { throw "$Port is busy. Press Disconnect in Betaflight Configurator (the app can stay open), then retry." }
+} else {
+    # Windows can list the same port twice right after the FC reboots, or keep a dead one for a
+    # while when the FC comes back under a new number. So: wait a little for the list to settle;
+    # if several remain, keep the ones that are a flight controller's USB serial (ST or Artery
+    # chip), and take the first of those that opens.
+    $ports = @()
+    for ($try = 0; $try -lt 10; $try++) {
+        $ports = @([System.IO.Ports.SerialPort]::GetPortNames() | Select-Object -Unique)
+        if ($ports.Count -eq 1) { break }
+        Start-Sleep -Milliseconds 500
+    }
+    if ($ports.Count -eq 0) { throw 'No serial port found. Is the drone plugged in by USB?' }
+    $pick = $ports
+    if ($ports.Count -gt 1) {
+        $fc = @()
+        try {
+            $usb = @(Get-CimInstance Win32_PnPEntity -Filter "Name LIKE '%(COM%'" | Where-Object { $_.DeviceID -match 'VID_(0483|2E3C)' })
+            foreach ($u in $usb) { if ($u.Name -match '\((COM\d+)\)' -and $ports -contains $Matches[1]) { $fc += $Matches[1] } }
+        } catch { }
+        if (-not $fc.Count) { throw "Several ports found ($($ports -join ', ')). Pass -Port COMx." }
+        $pick = @($fc | Sort-Object { [int]($_ -replace '\D') } -Descending)   # the newest number first: the old one is the dead one
+    }
+    foreach ($name in $pick) { try { $sp = Open-Port $name; $Port = $name; break } catch { $sp = $null } }
+    if (-not $sp) { throw "$($pick -join ', ') is busy. Press Disconnect in Betaflight Configurator (the app can stay open), then retry." }
+}
 # Read until the line has been quiet for $idleMs
 function Read-Reply([int]$idleMs = 600, [int]$maxMs = 30000) {
     $sb = New-Object System.Text.StringBuilder
