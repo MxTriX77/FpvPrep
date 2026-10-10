@@ -22,6 +22,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `yaw more`, `pitch roll less`, `yaw more more` | Adjusts rates in fixed steps. Shows old and new values and writes them. The change is remembered for the quad type; the opposite word undoes it. Say the word again for that many steps at once. |
 | `throttle softer`, `throttle stiffer` | Makes the type's throttle gentler or sharper where it is worked: at lift-off and in flight. Shows old and new curve and writes it. Remembered for the quad type; the opposite word undoes it, and saying it again takes more steps at once. |
 | `pid stiffer`, `pid softer` | Scales roll and pitch P, I and D together, 10 % of the drone's original values per step, from -2 to +3. Shows old and new values and a risk warning, and asks before applying. The level is remembered for the quad type. |
+| `pid -m` | The same editor on the PID values the drone holds now (roll and pitch P, I, D, D min; yaw P and I), written as typed. Saved to the profile they become what every drone of the type gets, and what `pid stiffer` and `pid softer` scale from. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |
 | `help`, `exit` | |
 

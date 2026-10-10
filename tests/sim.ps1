@@ -330,7 +330,7 @@ Check 'set horizon off hides it' ((Val 'osd_ah_pos') -eq '206' -and (Preset 'HOR
 # ---------------------------------------------------------------- set controls -m: rates by hand
 # the keyboard part is stood in for: it types new values into the fields and says where to write
 $script:typed = @{}; $script:toProfile = $true; $script:opened = $null
-function Edit-Screen($fields, [string]$who, [string]$NAME) {
+function Edit-Screen($fields, [string]$who, [string]$NAME, [string]$title) {
     $script:opened = @($fields | ForEach-Object { "$($_.key)=$($_.text)" })
     if ($script:typed.Contains('cancel')) { return $null }
     foreach ($f in $fields) { if ($script:typed.Contains($f.key)) { $f.text = $script:typed[$f.key] } }
@@ -352,6 +352,22 @@ $o = Line $C.edit
 Check 'leaving the editor without saving writes nothing' ($script:saves -eq $before -and (Has $o 'n_nothing'))
 $chk = @(@{ key = 'roll_rc_rate'; label = 'a'; min = 10; max = 500; text = '300' }, @{ key = 'roll_srate'; label = 'b'; min = 20; max = 1000; text = '200' }, @{ key = 'pitch_rc_rate'; label = 'c'; min = 10; max = 500; text = '50' }, @{ key = 'pitch_srate'; label = 'd'; min = 20; max = 1000; text = '220' }, @{ key = 'yaw_rc_rate'; label = 'e'; min = 10; max = 500; text = '80' }, @{ key = 'yaw_srate'; label = 'f'; min = 20; max = 1000; text = '240' })
 Check 'full stick below near centre is refused, and so is a value out of range' ((Edit-Check $chk) -eq (T 'ed_bad_full' 'b') -and (& { $chk[0].text = '5'; Edit-Check $chk }) -eq (T 'ed_bad' 'a' 10 500))
+
+# ---------------------------------------------------------------- pid -m: PID by hand
+Set-Content (Join-Path $data 'presets\PDM.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')
+$script:fc = New-FC 'dddd33330000222233334444' 'PDM20'
+$o = Line "$($C.bind) PDM"
+$script:typed = @{ p_roll = '50'; d_pitch = '40' }; $script:toProfile = $false
+$o = Line $C.pid_edit
+Check 'pid -m opens on the drone''s PID and writes what is typed' ($script:opened -contains 'p_roll=65' -and $script:opened -contains 'd_min_pitch=60' -and (Val 'p_roll') -eq '50' -and (Val 'd_pitch') -eq '40' -and (Val 'i_roll') -eq '20' -and $o.Contains('65 -> 50') -and (Has $o 'w_risky') -and -not ((Preset 'PDM') -match 'p_roll'))
+$script:typed = @{ p_roll = '60' }; $script:toProfile = $true
+$o = Line $C.pid_edit
+Check 'saved to the profile the typed PID stays there, level 0' ((Val 'p_roll') -eq '60' -and (Preset 'PDM') -match 'set p_roll = 60' -and (Preset 'PDM') -match '# stiffness: 0')
+$script:fc = New-FC 'eeee33330000222233334444' 'PDM21'
+$o = Line "$($C.bind) PDM"; $o = Line $C.fix_ctl
+Check 'set controls gives the next drone of the type the typed PID' ((Val 'p_roll') -eq '60' -and (Val 'd_pitch') -eq '40')
+$o = Line $C.pid_stiffer @('y')
+Check 'pid stiffer then scales from the typed values' ((Val 'p_roll') -eq '66' -and (Preset 'PDM') -match '# stiffness: 1' -and (Preset 'PDM') -match 'set p_roll = 60')
 
 # ---------------------------------------------------------------- the direction word more than once
 Set-Content (Join-Path $data 'presets\TWO.txt') -Encoding utf8 -Value @('# rates only', 'set roll_srate = 25')

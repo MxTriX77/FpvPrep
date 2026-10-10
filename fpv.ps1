@@ -523,7 +523,7 @@ function Do-Fix([string]$rest) {
         }
         $level = Stiff-Level $name
         if ($level -ne 0 -and $null -ne $d.vals['p_roll']) {
-            $pw = Pid-Wanted (Pid-Base $d) $level
+            $pw = Pid-Wanted (Pid-Base $d $name) $level
             foreach ($k in $pw.Keys) { $todo[$k] = $pw[$k] }
             Kv (T 'kv_level') (Signed $level) 'Yellow'
         }
@@ -728,7 +728,7 @@ function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
 # digits type, left/right step a value or switch where it is written: this drone only, or this
 # drone and the type's profile. Enter writes, Esc leaves without writing.
 # Edit-Screen is the keyboard part alone, so tests can stand in for it.
-function Edit-Screen($fields, [string]$who, [string]$NAME) {
+function Edit-Screen($fields, [string]$who, [string]$NAME, [string]$title = (T 'ed_title')) {
     if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $null }
     try {
         Add-Type -Namespace FpvPrep -Name Vt -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);' -ErrorAction SilentlyContinue
@@ -745,7 +745,7 @@ function Edit-Screen($fields, [string]$who, [string]$NAME) {
                 [Console]::Write($text); [Console]::BackgroundColor = $bg }
             $end = { [Console]::Write("$esc[K`n") }
             & $end
-            & $put "  $(T 'ed_title')" 'White'; & $put "  //  $who" 'Cyan'; & $end
+            & $put "  $title" 'White'; & $put "  //  $who" 'Cyan'; & $end
             & $put ('  ' + ('-' * $WIDTH)) 'DarkGray'; & $end; & $end
             # the row being edited: a marker in front, a lit box, and the real cursor after its digits
             $curX = -1; $curY = 0
@@ -814,7 +814,7 @@ function Edit-Check($fields) {
     }
     foreach ($a in 'roll', 'pitch', 'yaw') {
         $c = $fields | Where-Object { $_.key -eq "${a}_rc_rate" }; $m = $fields | Where-Object { $_.key -eq "${a}_srate" }
-        if ([int]$m.text -le [int]$c.text) { return (T 'ed_bad_full' $m.label) }
+        if ($c -and $m -and [int]$m.text -le [int]$c.text) { return (T 'ed_bad_full' $m.label) }
     }
     return ''
 }
@@ -970,7 +970,13 @@ function Do-Throttle([int]$dir, [int]$times) {
 # The level is kept per quad type ("# stiffness: N" in its settings file); each drone's original
 # values are recorded the first time it is touched, so levels never compound.
 $pidKeys = 'p_roll', 'i_roll', 'd_roll', 'd_min_roll', 'p_pitch', 'i_pitch', 'd_pitch', 'd_min_pitch'
-function Pid-Base($d) {
+function Pid-Base($d, [string]$type = '') {
+    if ($type) {
+        # PID values typed into the type's profile (pid -m) come first: levels scale from those
+        $own = Read-Settings (Join-Path $presets "$type.txt"); $typed = [ordered]@{}
+        foreach ($k in $pidKeys) { if ($own.Contains($k)) { $typed[$k] = $own[$k] } }
+        if ($typed.Count) { return $typed }
+    }
     $file = Join-Path $quads "pid0_$($d.id).txt"
     if (-not (Test-Path $file)) {
         $h = [ordered]@{}; foreach ($k in $pidKeys) { if ($null -ne $d.vals[$k]) { $h[$k] = $d.vals[$k] } }
@@ -998,6 +1004,50 @@ function Set-Stiff-Level([string]$name, [int]$level) {
 }
 function Signed([int]$n) { if ($n -gt 0) { return "+$n" }; return "$n" }
 
+# pid -m: the same editor on the PID values the drone holds now (roll and pitch P, I, D, D min;
+# yaw P and I). The pilot's own numbers, written as typed. Saved to the profile they become what
+# every drone of the type gets and what pid stiffer / softer scales from, and the level goes back to 0.
+function Do-PidEdit {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Rule (T 'r_pidedit')
+    if (-not (Acquire)) { return }
+    Step (T 's_readpid')
+    $d = Read-Drone
+    $id = $d.id
+    if (-not $id) { Fail (T 'f_noread'); return }
+    $name = Name-For $id
+    if (-not $name) { Fail (T 'f_unknown'); return }
+    $NAME = $name.ToUpper()
+    Kv (T 'kv_drone') "$NAME $id"
+    if ($null -eq $d.vals['p_roll'] -or $null -eq $d.vals['p_pitch']) { Fail (T 'f_nopid'); return }
+    [void](Pid-Base $d)   # keep the record of how the drone arrived before anything is typed over it
+    $fields = @()
+    foreach ($a in 'roll', 'pitch', 'yaw') {
+        $parts = @(@('p', 'P'), @('i', 'I'), @('d', 'D'), @('d_min', 'D min')); if ($a -eq 'yaw') { $parts = @(@('p', 'P'), @('i', 'I')) }
+        foreach ($pt in $parts) {
+            $key = "$($pt[0])_$a"
+            if ($null -eq $d.vals[$key]) { continue }
+            $fields += @{ key = $key; group = $a; label = "$((T "ax_$a").ToLower()) $($pt[1])"; unit = ''; mul = 1; step = 1; min = 0; max = 250; text = "$([int]$d.vals[$key])" }
+        }
+    }
+    $r = Edit-Screen $fields "$NAME $id" $NAME (T 'ed_pidtitle')
+    if ($null -eq $r) { Note (T 'n_nothing'); return }
+    $plan = [ordered]@{}
+    foreach ($f in $fields) {
+        $plan[$f.key] = [int]$f.text
+        if ("$([int]$d.vals[$f.key])" -ne "$([int]$f.text)") { Kv $f.label "$([int]$d.vals[$f.key]) -> $([int]$f.text)" }
+    }
+    Write-Host "$IND[!] $(T 'w_risky')" -ForegroundColor Yellow
+    $script:cur = @{ id = $id; name = $name; craft = $d.craft }
+    if (-not (Write-And-Verify $name $id $plan @())) {
+        Log "$name $id pid edit NOT CONFIRMED"
+        Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
+    }
+    if ($r.toProfile) { Save-Preset $name $plan; Set-Stiff-Level $name 0; Ok (T 'ok_remembered' $NAME) } else { Ok (T 'ok_drone_only') }
+    Log "$name $id pid edit profile=$($r.toProfile) $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
+}
 function Do-Stiff([int]$dir) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_stiffer'); if ($dir -lt 0) { $word = (T 'w_softer') }
@@ -1013,7 +1063,7 @@ function Do-Stiff([int]$dir) {
     Kv (T 'kv_drone') "$NAME $id"
     if ($null -eq $d.vals['p_roll'] -or $null -eq $d.vals['p_pitch']) { Fail (T 'f_nopid'); return }
 
-    $base = Pid-Base $d
+    $base = Pid-Base $d $name
     $old = Stiff-Level $name
     $new = [Math]::Max(-2, [Math]::Min(3, $old + $dir))
     if ($new -eq $old) { Note (T 'n_stifflimit' (Signed $old)); return }
@@ -1115,7 +1165,8 @@ function Dispatch([string]$line) {
         elseif ($low -match $script:STR['rx_pid']) {
             # checked before the axis words, so "pid softer" is never read as an axis command
             $rest = $low.Substring($Matches[0].Length)
-            if ($rest -match $script:STR['rx_stiffer']) { Do-Stiff (Times $rest 'rx_stiffer') } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff (-(Times $rest 'rx_softer')) } else { Note (T 'n_pidwhat') }
+            if ($rest -match '(^|\s)-m(\s|$)') { Do-PidEdit }
+            elseif ($rest -match $script:STR['rx_stiffer']) { Do-Stiff (Times $rest 'rx_stiffer') } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff (-(Times $rest 'rx_softer')) } else { Note (T 'n_pidwhat') }
         }
         elseif ($low -match $script:STR['rx_thr']) {
             # its own words too, and also ahead of the axis words

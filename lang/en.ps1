@@ -178,7 +178,7 @@
 
     # ---- set controls -m: the editor
     r_edit = 'SET  //  CONTROLS BY HAND'
-    ed_title = 'CONTROLS BY HAND'
+    ed_title = 'CONTROLS BY HAND'; ed_pidtitle = 'PID BY HAND'; r_pidedit = 'PID  //  BY HAND'
     ed_expo = '{0}, expo'
     ed_target = 'write to'
     ed_drone = 'this drone only'
@@ -237,7 +237,7 @@
         @(),
         @('yaw | pitch | roll  [ more | less ]', 'rates'),
         @('throttle [ softer | stiffer ]', 'throttle curve'),
-        @('pid [ stiffer | softer ]', 'roll and pitch PID, 10% a step. risky'),
+        @('pid [ stiffer | softer | -m ]', 'roll and pitch PID, 10% a step; -m: type them by hand. risky'),
         @('say the word again for a bigger step:  yaw more more'),
         @(),
         @('radio', 'radio stick calibration'),
@@ -249,6 +249,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }
