@@ -245,8 +245,7 @@
     r_help = 'COMMANDS'
     help = @(
         @('bind "NAME"', 'find the drone on USB'),
-        @('status [ -diff ]', 'check the drone; -diff: what changed since it arrived'),
-        @('status -p NAME [ -diff ]', 'a saved profile, no drone needed; -diff: against the standard'),
+        @('status [ -p NAME ] [ -diff ]', 'check the drone; -diff: what changed; -p: a saved profile, no drone'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
         @('set controls [ -m ]', 'write the stick settings; -m: type the rates by hand'),
