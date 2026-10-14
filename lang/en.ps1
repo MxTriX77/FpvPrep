@@ -56,6 +56,7 @@
     seen_yes = 'YES'; seen_no = 'no - new drone'
     kv_drone = 'drone'
     errors = @(
+        @('port is closed|does not exist', 'the drone dropped off USB in the middle. Check the cable, then run the command again.'),
         @('No serial port|No drone on USB', 'no drone on USB. Re-seat the cable.'),
         @('is busy', 'the port is busy. Close the Betaflight program or press Disconnect in it.'),
         @('Several ports', 'this PC has several serial ports and I cannot pick one: {0}'),

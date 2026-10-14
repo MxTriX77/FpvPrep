@@ -29,10 +29,12 @@ if ($Port) {
     try { $sp = Open-Port $Port }
     catch { throw "$Port is busy. Press Disconnect in Betaflight Configurator (the app can stay open), then retry." }
 } else {
-    # Windows can list the same port twice right after the FC reboots, or keep a dead one for a
-    # while when the FC comes back under a new number. So: wait a little for the list to settle;
-    # if several remain, keep the ones that are a flight controller's USB serial (ST or Artery
-    # chip), and take the first of those that opens.
+    # Each flight controller gets its own port number in Windows, and the list Windows gives can
+    # still hold the previous drone's port for a while after it was unplugged (seen on real drones:
+    # COM5 + COM6, COM28 + COM30). So: wait a little for the list to settle; if several remain,
+    # try the ones that are really plugged in first (flight controllers' USB serial, ST or Artery
+    # chip, before anything else), newest number first, and take the first that opens. A port
+    # that is only left over in the list cannot be opened, so it is skipped.
     $ports = @()
     for ($try = 0; $try -lt 10; $try++) {
         $ports = @([System.IO.Ports.SerialPort]::GetPortNames() | Select-Object -Unique)
@@ -40,20 +42,22 @@ if ($Port) {
         Start-Sleep -Milliseconds 500
     }
     if ($ports.Count -eq 0) { throw 'No serial port found. Is the drone plugged in by USB?' }
+    $newest = { param($list) @($list | Sort-Object { [int]($_ -replace '\D') } -Descending) }
     $pick = $ports
     if ($ports.Count -gt 1) {
-        $fc = @()
+        $fc = @(); $present = @()
         try {
-            $usb = @(Get-CimInstance Win32_PnPEntity -Filter "Name LIKE '%(COM%'" | Where-Object { $_.DeviceID -match 'VID_(0483|2E3C)' })
-            foreach ($u in $usb) { if ($u.Name -match '\((COM\d+)\)' -and $ports -contains $Matches[1]) { $fc += $Matches[1] } }
+            foreach ($u in @(Get-CimInstance Win32_PnPEntity -Filter "Name LIKE '%(COM%'")) {
+                if ($u.Name -notmatch '\((COM\d+)\)') { continue }
+                $com = $Matches[1]; if ($ports -notcontains $com) { continue }
+                if ($u.DeviceID -match 'VID_(0483|2E3C)') { $fc += $com } else { $present += $com }
+            }
         } catch { }
-        if (-not $fc.Count) { throw "Several ports found ($($ports -join ', ')). Pass -Port COMx." }
-        $pick = @($fc | Sort-Object { [int]($_ -replace '\D') } -Descending)   # the newest number first: the old one is the dead one
+        $pick = @(@(& $newest $fc) + @(& $newest $present) + @(& $newest $ports) | Select-Object -Unique)
     }
     foreach ($name in $pick) { try { $sp = Open-Port $name; $Port = $name; break } catch { $sp = $null } }
     if (-not $sp) { throw "$($pick -join ', ') is busy. Press Disconnect in Betaflight Configurator (the app can stay open), then retry." }
-}
-# Read until the line has been quiet for $idleMs
+}# Read until the line has been quiet for $idleMs
 function Read-Reply([int]$idleMs = 600, [int]$maxMs = 30000) {
     $sb = New-Object System.Text.StringBuilder
     $total = [Diagnostics.Stopwatch]::StartNew()
@@ -106,4 +110,7 @@ finally {
     if ($sp.IsOpen -and ($Commands -match '^\s*motor\s')) { try { $sp.WriteLine('motor 255 1000') } catch {} }
     # The FC is already rebooting here, so the port can vanish under us; that is fine
     try { if ($sp.IsOpen) { $sp.Close() } } catch {}
+    # always let go of the port, even one that vanished mid-session: a handle left open keeps a
+    # dead port in Windows' list, which is how two ports showed up after a drone dropped off
+    try { if ($sp) { $sp.Dispose() } } catch {}
 }
