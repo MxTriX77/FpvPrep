@@ -122,6 +122,7 @@
     m_dead = 'motor {0} did not turn'
     m_noisy = 'motor {0}: noisy signal'
     m_spread = 'motors differ by {0}%'
+    m_spread_grp = 'motors {0}-{1} differ by {2}%'
     m_nostop = 'motor stop not confirmed'
     chip_motors = 'motors'; chip_even = 'even'; chip_after = 'after run'; chip_stopped = 'stopped'
 

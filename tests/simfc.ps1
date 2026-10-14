@@ -38,7 +38,7 @@ function Sim-FC([string[]]$commands, [bool]$save) {
                 $o += 'Dshot reads: 91453'; $o += 'Dshot invalid pkts: 0'; $o += ''
                 $o += 'Motor    Type   eRPM    RPM     Hz Invalid   TEMP    VCC   CURR  ST/EV   DBG1   DBG2   DBG3'
                 $o += '=====  ====== ====== ====== ====== ======= ====== ====== ====== ====== ====== ====== ======'
-                for ($m = 0; $m -lt 4; $m++) {
+                for ($m = 0; $m -lt $fc.rpm.Count; $m++) {
                     $v = 0; if ($fc.running) { $v = $fc.rpm[$m] }
                     $o += ("    {0}   R----   {1,5}  {2,5}     {3,2}  {4,5:0.00}%      0   0.00      0      0" -f ($m + 1), ($v * 7), $v, [int]($v / 60), $fc.escErr[$m])
                 }

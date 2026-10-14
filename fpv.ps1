@@ -342,11 +342,11 @@ function Health($d) {
 
     # ESCs at rest. Only meaningful with the battery in; a silent ESC is a caution here and a
     # hard failure only when a motor run confirms it.
-    $rows = @([regex]::Matches($h, '(?m)^\s*([1-4])\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)%'))
-    if ($hasBatt -and $rows.Count -ge 4) {
+    $rows = Motor-Rows $h
+    if ($hasBatt -and $rows.Count -ge 1) {
         $dead = @($rows | Where-Object { [double]$_.Groups[5].Value -ge 50 } | ForEach-Object { $_.Groups[1].Value })
         if ($dead.Count) { foreach ($m in $dead) { $problems += , @(1, (T 'h_esc' $m)) } }
-        else { $chips += (T 'chip_escs'), '4/4' }
+        else { $chips += (T 'chip_escs'), "$($rows.Count)/$($rows.Count)" }
     }
 
     # Why it would refuse to arm. Transient and bench-normal reasons are left out.
@@ -369,7 +369,22 @@ function Health($d) {
 }
 
 # ---------------------------------------------------------------- motor check
-# All four together at the lowest throttle that turns them. Props on or off is the pilot's call; the run is the same. Returns the severity.
+# The ESC speed report (dshot_telemetry_info): one row per motor, "N  type  eRPM  RPM  Hz  invalid%".
+# Only the last report in the text counts, and it has as many rows as the drone has motors:
+# 4 on a quad, 8 on an over/under octo (Betaflight mixer OCTOX8, seen on real drones 2026-10-14).
+function Motor-Rows([string]$text) {
+    $all = @([regex]::Matches($text, '(?m)^\s*(\d{1,2})\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)%'))
+    for ($i = $all.Count - 1; $i -ge 0; $i--) { if ($all[$i].Groups[1].Value -eq '1') { return @($all[$i..($all.Count - 1)]) } }
+    return @()
+}
+# Motors compared with each other: all of them, or on 8 motors each layer of 4 on its own,
+# because over/under layers often carry different motors and props and never turn alike.
+function Motor-Groups([int]$n) {
+    # the leading comma keeps PowerShell from unrolling the list of groups on the way out
+    if ($n -eq 8) { return , (@(, @(0, 1, 2, 3)) + @(, @(4, 5, 6, 7))) }
+    return , @(, @(0..($n - 1)))
+}
+# All motors together at the lowest throttle that turns them. Props on or off is the pilot's call; the run is the same. Returns the severity.
 # $secs: how long they turn, 1 to 10. The run lasts as long as the speed readings in between take,
 # about three quarters of a second each, so the time is approximate.
 function Motor-Check([int]$secs = 1, [switch]$AfterReboot) {
@@ -379,10 +394,8 @@ function Motor-Check([int]$secs = 1, [switch]$AfterReboot) {
     for ($n = [int][Math]::Round($secs / 0.75) - 1; $n -gt 0; $n--) { $cmds += 'dshot_telemetry_info' }
     $cmds += 'motor 255 1000'
     $out = Talk $cmds -AfterReboot:$AfterReboot
-    $rows = @([regex]::Matches($out, '(?m)^\s*([1-4])\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)%'))
-    if ($rows.Count -ge 4) { $rows = $rows[($rows.Count - 4)..($rows.Count - 1)] }
-    if ($rows.Count -lt 4) { Fail (T 'm_noread'); $script:motorLog = 'motors: no readout'; return 1 }
-
+    $rows = Motor-Rows $out
+    if ($rows.Count -lt 1) { Fail (T 'm_noread'); $script:motorLog = 'motors: no readout'; return 1 }
     $rpm = @($rows | ForEach-Object { [int]$_.Groups[3].Value })
     $max = ($rpm | Measure-Object -Maximum).Maximum; $min = ($rpm | Measure-Object -Minimum).Minimum
     $dead = @(); $noisy = @()
@@ -390,25 +403,37 @@ function Motor-Check([int]$secs = 1, [switch]$AfterReboot) {
         if ([int]$m.Groups[3].Value -eq 0) { $dead += $m.Groups[1].Value }
         elseif ([double]$m.Groups[5].Value -ge 1) { $noisy += $m.Groups[1].Value }
     }
-    $avg = ($rpm | Measure-Object -Average).Average
-    $spread = 0; if ($avg -gt 0 -and -not $dead.Count) { $spread = ($max - $min) / $avg * 100 }
+    $groups = Motor-Groups $rows.Count
+    $uneven = @()   # @(first, last, percent) for every group whose speeds differ too much
+    foreach ($g in $groups) {
+        $gr = @($g | ForEach-Object { $rpm[$_] }); $avg = ($gr | Measure-Object -Average).Average
+        if ($avg -gt 0 -and -not @($gr | Where-Object { $_ -eq 0 }).Count) {
+            $sp = (($gr | Measure-Object -Maximum).Maximum - ($gr | Measure-Object -Minimum).Minimum) / $avg * 100
+            if ($sp -gt 15) { $uneven += , @(($g[0] + 1), ($g[-1] + 1), [int]$sp) }
+        }
+    }
     $stopped = $out -match 'all motors: 0'
-    $sev = 0; if ($noisy.Count -or $spread -gt 15 -or -not $stopped) { $sev = 1 }; if ($dead.Count) { $sev = 2 }
+    $sev = 0; if ($noisy.Count -or $uneven.Count -or -not $stopped) { $sev = 1 }; if ($dead.Count) { $sev = 2 }
     Close-Pending (@('OK', 'WARN', 'FAIL')[$sev])
 
-    foreach ($m in $rows) {
-        $v = [int]$m.Groups[3].Value; $err = [double]$m.Groups[5].Value
-        $on = 0; if ($max -gt 0) { $on = [int][Math]::Round(20 * $v / ($max * 1.1)) }
-        Write-Host "$IND$(T 'm_row' $m.Groups[1].Value)  " -ForegroundColor Gray -NoNewline
-        Write-Host ($LIT * $on) -ForegroundColor Green -NoNewline
-        Write-Host ($SHD * (20 - $on)) -ForegroundColor DarkGray -NoNewline
-        Write-Host ("  {0,5} {1}" -f $v, (T 'unit_rpm')) -ForegroundColor Cyan -NoNewline
-        $ec = 'DarkGray'; if ($err -ge 1) { $ec = 'Yellow' }
-        Write-Host ("   " + (T 'm_err' $err)) -ForegroundColor $ec
+    # bars: each motor against the fastest of its own group, a blank line between groups
+    for ($gi = 0; $gi -lt $groups.Count; $gi++) {
+        if ($gi -gt 0) { Write-Host '' }
+        $gmax = (@($groups[$gi] | ForEach-Object { $rpm[$_] }) | Measure-Object -Maximum).Maximum
+        foreach ($i in $groups[$gi]) {
+            $m = $rows[$i]; $v = [int]$m.Groups[3].Value; $err = [double]$m.Groups[5].Value
+            $on = 0; if ($gmax -gt 0) { $on = [int][Math]::Round(20 * $v / ($gmax * 1.1)) }
+            Write-Host "$IND$(T 'm_row' $m.Groups[1].Value)  " -ForegroundColor Gray -NoNewline
+            Write-Host ($LIT * $on) -ForegroundColor Green -NoNewline
+            Write-Host ($SHD * (20 - $on)) -ForegroundColor DarkGray -NoNewline
+            Write-Host ("  {0,5} {1}" -f $v, (T 'unit_rpm')) -ForegroundColor Cyan -NoNewline
+            $ec = 'DarkGray'; if ($err -ge 1) { $ec = 'Yellow' }
+            Write-Host ("   " + (T 'm_err' $err)) -ForegroundColor $ec
+        }
     }
     foreach ($n in $dead) { Fail (T 'm_dead' $n) }
     foreach ($n in $noisy) { Warn (T 'm_noisy' $n) }
-    if ($spread -gt 15) { Warn (T 'm_spread' ([int]$spread)) }
+    foreach ($u in $uneven) { if ($groups.Count -gt 1) { Warn (T 'm_spread_grp' $u[0] $u[1] $u[2]) } else { Warn (T 'm_spread' $u[2]) } }
     if (-not $stopped) { Warn (T 'm_nostop') }
     if ($sev -eq 0) { Chips (T 'chip_motors'), (T 'chip_even'), (T 'chip_after'), (T 'chip_stopped') }
     $script:motorLog = "motors sev=$sev rpm=$min-$max"

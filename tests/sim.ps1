@@ -151,6 +151,20 @@ Check 'a motor that does not turn is red: do not fly' ($o.Contains((T 'm_dead' 3
 $script:fc.rpm = @(1200, 1195, 900, 1210)
 $o = Line $C.motors
 Check 'uneven motors are a remark' ($o.Contains(((T 'm_spread') -f 28).Substring(0, 12)) -and -not $o.Contains($green))
+# an over/under octo (mixer OCTOX8): eight motors report; the smaller bottom layer turns faster
+# than the top, so each layer of four is compared only with itself
+$script:fc.rpm = @(1390, 1386, 1400, 1394, 1820, 1810, 1835, 1828); $script:fc.escErr = @(0, 0, 0, 0, 0, 0, 0, 0)
+$o = Line $C.motors
+Check 'eight motors: eight rows, two layers each even, green' (@([regex]::Matches($o, ((T 'm_row' 0) -replace '0', '\d'))).Count -eq 8 -and $o.Contains('1835') -and $o.Contains($green))
+$script:fc.rpm = @(1390, 1386, 1400, 1394, 1820, 0, 1835, 1828)
+$o = Line $C.motors
+Check 'a motor of the second layer that does not turn is red' ($o.Contains((T 'm_dead' 6)) -and $o.Contains(((T 'v_fail') -f (T 'r_motors'), '').Substring(0, 16)))
+$script:fc.rpm = @(1390, 1386, 1400, 1394, 1820, 1400, 1835, 1828)
+$o = Line $C.motors
+Check 'an uneven layer is named in the remark' ($o.Contains((T 'm_spread_grp' 5 8 0).Substring(0, 12)) -and -not $o.Contains((T 'm_spread_grp' 1 4 0).Substring(0, 12)) -and -not $o.Contains($green))
+$o = Line $C.status
+Check 'status counts every ESC at rest: 8/8' ($o.Contains('8/8'))
+$script:fc.escErr = @(0, 0, 0, 0, 0, 0, 0, 0)
 $script:fc.rpm = @(1200, 1195, 1188, 1210)
 
 # ---------------------------------------------------------------- health check
