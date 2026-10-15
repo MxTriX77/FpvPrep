@@ -39,14 +39,17 @@ function Next-Drone([string]$name) {
 $script:fc = New-FC
 
 function Wait-Port([int]$seconds = 15) { return $true }
-function Run-BF([string[]]$commands, [bool]$save) { for ($i = 0; $i -lt 7; $i++) { Tick; if ($fancy) { Start-Sleep -Milliseconds 90 } }; return (Sim-FC $commands $save) }
+function Run-BF([string[]]$commands, [bool]$save) {
+    if ($script:requireId -and $script:fc.id.Substring(0, 8) -ne $script:requireId) { throw "Different drone: $($script:fc.id.Substring(0, 8)) (bound: $script:requireId)" } for ($i = 0; $i -lt 7; $i++) { Tick; if ($fancy) { Start-Sleep -Milliseconds 90 } }; return (Sim-FC $commands $save) }
 if (-not $fancy) { function Busy([int]$ms) { } }
 
 function Mock-Line([string]$line) {
     $low = $line.ToLower().Trim()
+    # mock only: put another pretend drone on the cable, to try what happens to the session
+    if ($low -eq 'swap') { Next-Drone 'other'; Write-Host '     (another drone is on the cable now)' -ForegroundColor DarkGray; Write-Host ''; return }
     if ($low -match $script:STR['rx_bind']) {
         $r = Parse-Target $line.Trim().Substring($Matches[0].Length)
-        if ($r.name) { Next-Drone $r.name }
+        if ($r.name -and $r.name -notmatch '^-') { Next-Drone $r.name }
     }
     elseif ($low -match $script:STR['rx_status']) { $script:scenario = ($script:scenario % 3) + 1; Set-Scenario $script:scenario }
     Dispatch $line

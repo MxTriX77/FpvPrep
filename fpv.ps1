@@ -135,7 +135,7 @@ function Log([string]$t) {
 
 # bf.ps1 speaks English; its errors are mapped to the console's language here
 function Local-Error([string]$m) {
-    foreach ($e in $script:STR['errors']) { if ($m -match $e[0]) { return ($e[1] -f $m) } }
+    foreach ($e in $script:STR['errors']) { if ($m -match $e[0]) { return ($e[1] -f $m, $Matches[1], $Matches[2]) } }
     return $m
 }
 
@@ -154,6 +154,7 @@ function Run-BF([string[]]$commands, [bool]$save) {
     try {
         [void]$ps.AddCommand($bf).AddParameter('Commands', $commands)
         if ($save) { [void]$ps.AddParameter('Save', $true) }
+        if ($script:requireId) { [void]$ps.AddParameter('RequireId', $script:requireId) }
         $h = $ps.BeginInvoke()
         while (-not $h.IsCompleted) { Tick; Start-Sleep -Milliseconds 90 }
         $res = $ps.EndInvoke($h)
@@ -454,15 +455,99 @@ function Parse-Target([string]$rest) {
     elseif ($clean -match '^\s*(\S+)(\s|$)') { $name = $Matches[1]; $clean = $clean.Substring($Matches[0].Length) }
     return @{ name = $name; motor = $motor; free = @($clean -split '\s+' | Where-Object { $_ }) }
 }
+# bind -ls: choose the quad name from the saved profiles, right on the command line. The command
+# row itself shows the name being chosen (FPV:\> bind NAME) and a short list opens under it;
+# up/down move, typing narrows the list, Enter binds, Esc leaves. The list is wiped afterwards,
+# so the screen reads as if the name had been typed. Newest profile first.
+# Pick-Profile is the keyboard part alone, so tests can stand in for it.
+function Saved-Profiles {
+    return @(Get-ChildItem $presets -Filter '*.txt' -File | Where-Object { $_.BaseName -ne '_default' } | Sort-Object LastWriteTime -Descending | ForEach-Object BaseName)
+}
+function Pick-Profile($names) {
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $null }
+    $show = 6; $filter = ''; $sel = 0; $result = $null
+    $fg = [Console]::ForegroundColor; $bg = [Console]::BackgroundColor
+    $rowY = [Console]::CursorTop - 1                     # the command row the user just typed
+    $height = [Math]::Min($show, $names.Count) + 1       # the list and one line of keys
+    for ($i = 0; $i -lt $height; $i++) { [Console]::WriteLine() }   # make room, scrolling if needed
+    $top = [Console]::CursorTop - $height; $rowY = $top - 1
+    $width = [Math]::Max(20, [Console]::BufferWidth - 1)
+    # text goes through the host, which writes Unicode (Cyrillic names); [Console]::Write does not
+    $say = { param([string]$text, [string]$color, [switch]$Sel)
+        $f = $color; $b = $bg; if ($Sel) { $f = 'White'; $b = 'DarkCyan' }
+        Write-Host $text -NoNewline -ForegroundColor $f -BackgroundColor $b }
+    $put = { param([int]$y, [string]$text, [string]$color, [switch]$Sel)
+        [Console]::SetCursorPosition(0, $y); & $say $text $color -Sel:$Sel }
+    [Console]::CursorVisible = $false
+    try {
+        while ($true) {
+            $list = @($names | Where-Object { $_.ToLower().Contains($filter.ToLower()) })
+            if ($sel -ge $list.Count) { $sel = [Math]::Max(0, $list.Count - 1) }
+            $first = [Math]::Max(0, [Math]::Min($sel - $show + 1, $list.Count - $show))
+            # the command row: the prompt, the verb, and the name being chosen
+            & $put $rowY (' ' * $width) 'Gray'
+            & $put $rowY '  FPV' 'Cyan'; & $say ':\> ' 'Green'
+            & $say "$($script:STR['test_words'].bind) " $fg
+            $now = ''; if ($list.Count) { $now = $list[$sel] }
+            & $say $now 'Yellow'
+            if ($filter) { & $say "   /$filter" 'DarkGray' }
+            for ($i = 0; $i -lt $height - 1; $i++) {
+                $j = $first + $i
+                & $put ($top + $i) (' ' * $width) 'Gray'
+                if ($j -lt $list.Count) {
+                    if ($j -eq $sel) { & $put ($top + $i) '        > ' 'Yellow'; & $say " $($list[$j]) " 'White' -Sel }
+                    else { & $put ($top + $i) "          $($list[$j])" 'Gray' }
+                }
+            }
+            & $put ($top + $height - 1) (' ' * $width) 'Gray'
+            & $put ($top + $height - 1) "        $(T 'ls_keys')" 'DarkGray'
+
+            $k = [Console]::ReadKey($true); $code = [int]$k.KeyChar
+            if ($k.Key -eq 'Escape' -or $code -eq 27) { break }
+            if ($k.Key -eq 'Enter' -or $code -eq 13) { if ($list.Count) { $result = $list[$sel] }; break }
+            if ($k.Key -eq 'UpArrow') { if ($sel -gt 0) { $sel-- }; continue }
+            if ($k.Key -eq 'DownArrow' -or $k.Key -eq 'Tab') { if ($sel -lt $list.Count - 1) { $sel++ }; continue }
+            if ($k.Key -eq 'Backspace') { if ($filter) { $filter = $filter.Substring(0, $filter.Length - 1); $sel = 0 }; continue }
+            if ($k.KeyChar -and -not [char]::IsControl($k.KeyChar)) { $filter += $k.KeyChar; $sel = 0 }
+        }
+    } finally {
+        # wipe the list, leave the command row as if the name had been typed
+        for ($i = 0; $i -lt $height; $i++) { & $put ($top + $i) (' ' * $width) 'Gray' }
+        & $put $rowY (' ' * $width) 'Gray'
+        & $put $rowY '  FPV' 'Cyan'; & $say ':\> ' 'Green'
+        # the row as if typed: in the window's own text colour, like every typed command
+        $tail = '-ls'; if ($result) { $tail = $result }; & $say "$($script:STR['test_words'].bind) $tail" $fg
+        [Console]::ForegroundColor = $fg; [Console]::BackgroundColor = $bg; [Console]::CursorVisible = $true
+        [Console]::SetCursorPosition(0, $rowY + 1)
+    }
+    return $result
+}
+function Do-BindList {
+    $names = Saved-Profiles
+    if (-not $names.Count) { Note (T 'n_noprofiles'); return }
+    $pick = Pick-Profile $names
+    if (-not $pick) { return }
+    if ($pick -match '\s') { $pick = "`"$pick`"" }
+    Do-Bind $pick
+}
 function Last-Name {
     $f = Join-Path $quads 'last.txt'
     if (Test-Path $f) { return "$(Get-Content $f -TotalCount 1 -Encoding UTF8)".Trim() }
     return ''
 }
-# The type name for a drone that is plugged in now: the one bound in this window, else the last
+# The session (user, 2026-10-15): bind starts it, and every command that writes to a drone or uses
+# a profile works only on the drone bound in this window. The firmware's own name says nothing
+# about which profile a drone belongs to, so nothing is guessed: no bind, or another drone on the
+# cable, and the command stops. The same drone unplugged and plugged back in is fine; it is
+# recognised by its id, not by the cable. A new window starts with no session.
+function Need-Bind {
+    if ($script:cur) { return $true }
+    Fail (T 'f_nobind'); return $false
+}
 function Name-For([string]$id) {
-    if ($script:cur -and $script:cur.id -eq $id) { return $script:cur.name }
-    return (Last-Name)
+    if (-not $script:cur) { Fail (T 'f_nobind'); return $null }
+    if ($id -and $script:cur.id -ne $id) { Fail (T 'f_otherdrone' $id $script:cur.id); return $null }
+    return $script:cur.name
 }
 function Acquire {
     Step (T 's_find')
@@ -520,13 +605,14 @@ function Do-Fix([string]$rest) {
     $what = @(); if ($ctl) { $what += (T 'w_ctl') }; if ($snd) { $what += (T 'w_snd') }
 
     Rule (T 'r_fix' ($what -join ' + '))
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readdrone')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_bindfirst'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     $script:cur = @{ id = $id; name = $name; craft = $d.craft }
     Kv (T 'kv_drone') "$NAME $id"
@@ -585,6 +671,7 @@ function Do-Name([string]$new) {
     if (-not $new) { Note (T 'n_namewhat'); return }
     Rule (T 'r_name')
     if ($new.Length -gt 16 -or $new -notmatch '^[A-Za-z0-9 _.\-]+$') { Fail (T 'f_badname'); return }
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readdrone')
     $d = Read-Drone
@@ -593,7 +680,7 @@ function Do-Name([string]$new) {
     Kv (T 'kv_osdname') "$($d.craft) -> $new"
     $pos = $d.vals['osd_craft_name_pos']
     if ($null -ne $pos -and (([int]$pos) -band 0x3800) -eq 0) { Warn (T 'w_name_hidden') }
-    $type = Name-For $id; if (-not $type) { $type = 'drone' }
+    $type = Name-For $id; if (-not $type) { return }
     if (-not (Write-And-Verify $type $id ([ordered]@{ craft_name = $new }) @())) {
         Log "$id name NOT CONFIRMED"
         Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
@@ -651,6 +738,7 @@ function Do-Sticks([string]$rest) {
     if (-not ($on -or $off)) { Note (T 'n_stickswhat'); return }
     $word = (T 'w_on'); if ($off) { $word = (T 'w_off') }
     Rule (T 'r_sticks' $word)
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readdrone')
     $d = Read-Drone
@@ -660,7 +748,7 @@ function Do-Sticks([string]$rest) {
     if ($null -eq $plan) { Fail (T 'f_nosticks'); return }
     Kv (T 'kv_sticks') $word.ToLower()
     $type = Name-For $id
-    if (-not $type) { Fail (T 'f_unknown'); return }
+    if (-not $type) { return }
     if (-not (Write-And-Verify $type $id $plan @())) {
         Log "$id sticks NOT CONFIRMED"
         Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
@@ -684,6 +772,7 @@ function Do-Horizon([string]$rest) {
     if (-not ($on -or $off)) { Note (T 'n_horizonwhat'); return }
     $word = (T 'w_on'); if ($off) { $word = (T 'w_off') }
     Rule (T 'r_horizon' $word)
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readdrone')
     $d = Read-Drone
@@ -693,7 +782,7 @@ function Do-Horizon([string]$rest) {
     if ($null -eq $plan) { Fail (T 'f_nohorizon'); return }
     Kv (T 'kv_horizon') $word.ToLower()
     $type = Name-For $id
-    if (-not $type) { Fail (T 'f_unknown'); return }
+    if (-not $type) { return }
     if (-not (Write-And-Verify $type $id $plan @())) {
         Log "$id horizon NOT CONFIRMED"
         Write-Host ''; Bar (T 'b_problems') 'Yellow'; return
@@ -712,13 +801,14 @@ function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_more'); if ($dir -lt 0) { $word = (T 'w_less') }
     Rule (T 'r_tune' (($axes | ForEach-Object { T "ax_$_" }) -join ' + ') $word)
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readrates')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ("$($d.vals['rates_type'])" -ne 'ACTUAL') { Fail (T 'f_notactual' $d.vals['rates_type']); return }
@@ -767,9 +857,10 @@ function Edit-Screen($fields, [string]$who, [string]$NAME, [string]$title = (T '
     try {
         while ($true) {
             [Console]::SetCursorPosition(0, 0)
+            # text goes through the host, which writes Unicode (Cyrillic labels); [Console]::Write does not
             $put = { param([string]$text, [string]$color = 'Gray', [switch]$Sel)
-                [Console]::ForegroundColor = $color; if ($Sel) { [Console]::BackgroundColor = 'DarkCyan'; [Console]::ForegroundColor = 'White' }
-                [Console]::Write($text); [Console]::BackgroundColor = $bg }
+                $f = $color; $b = $bg; if ($Sel) { $f = 'White'; $b = 'DarkCyan' }
+                Write-Host $text -NoNewline -ForegroundColor $f -BackgroundColor $b }
             $end = { [Console]::Write("$esc[K`n") }
             & $end
             & $put "  $title" 'White'; & $put "  //  $who" 'Cyan'; & $end
@@ -849,13 +940,14 @@ function Edit-Check($fields) {
 function Do-Edit([string[]]$only = @()) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_edit')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readrates')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ("$($d.vals['rates_type'])" -ne 'ACTUAL') { Fail (T 'f_notactual' $d.vals['rates_type']); return }
@@ -944,13 +1036,14 @@ function Thr-Softest([int]$mid) {
 function Do-ThrEdit {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_thredit')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readthr')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ($null -eq $d.vals['thr_mid'] -or $null -eq $d.vals['thr_expo']) { Fail (T 'f_nothr'); return }
@@ -970,17 +1063,19 @@ function Do-ThrEdit {
     Log "$name $id throttle edit profile=$($r.toProfile) $(Pairs $plan)"
     Write-Host ''
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
-}function Do-Throttle([int]$dir, [int]$times) {
+}
+function Do-Throttle([int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_stiffer') }
     Rule (T 'r_thr' $word)
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readthr')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ($null -eq $d.vals['thr_mid'] -or $null -eq $d.vals['thr_expo']) { Fail (T 'f_nothr'); return }
@@ -1070,13 +1165,14 @@ function Signed([int]$n) { if ($n -gt 0) { return "+$n" }; return "$n" }
 function Do-PidEdit {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_pidedit')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readpid')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ($null -eq $d.vals['p_roll'] -or $null -eq $d.vals['p_pitch']) { Fail (T 'f_nopid'); return }
@@ -1112,13 +1208,14 @@ function Do-Stiff([int]$dir) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_stiffer'); if ($dir -lt 0) { $word = (T 'w_softer') }
     Rule (T 'r_stiff' $word)
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readpid')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
     $name = Name-For $id
-    if (-not $name) { Fail (T 'f_unknown'); return }
+    if (-not $name) { return }
     $NAME = $name.ToUpper()
     Kv (T 'kv_drone') "$NAME $id"
     if ($null -eq $d.vals['p_roll'] -or $null -eq $d.vals['p_pitch']) { Fail (T 'f_nopid'); return }
@@ -1151,8 +1248,10 @@ function Do-Stiff([int]$dir) {
 function Do-Motors([int]$secs = 1) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_motors')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
-    $sev = Motor-Check $secs
+    $script:requireId = $script:cur.id   # bf.ps1 checks the id before anything spins
+    try { $sev = Motor-Check $secs } finally { $script:requireId = $null }
     Log "motors only: $($script:motorLog)"
     Verdict $sev (T 'r_motors') (T 'good_motors') $clock
 }
@@ -1165,9 +1264,11 @@ function Do-Status {
     Step (T 's_readonly')
     $d = Read-Drone -Health
     if (-not $d.id) { Fail (T 'f_noread'); return }
-    $name = Name-For $d.id
-    $who = $d.id; if ($name) { $who = "$($name.ToUpper()) $($d.id)" }
+    # free of the session: a look at whatever drone is on the cable, saying whether it is the bound one
+    $who = $d.id; $bound = ($script:cur -and $script:cur.id -eq $d.id)
+    if ($bound) { $who = "$($script:cur.name.ToUpper()) $($d.id)" }
     Kv (T 'kv_drone') $who
+    if (-not $bound) { Note (T 'n_notbound') }
     if ("$($d.vals['rates_type'])" -eq 'ACTUAL') {
         foreach ($a in 'roll', 'pitch', 'yaw') { Kv (T 'kv_rates' (T "ax_$a").ToLower()) "$([int]$d.vals["${a}_rc_rate"] * 10) / $([int]$d.vals["${a}_srate"] * 10) $(T 'unit_dps')" }
     } else { Kv (T 'kv_ratefmt') "$($d.vals['rates_type'])" 'Yellow' }
@@ -1328,15 +1429,17 @@ function Do-Profile([string]$name, [bool]$diff) {
     Write-Host ''
     $n = @($rows | Where-Object { $_.changed }).Count
     if ($diff -and $n) { Bar (T 'pf_diff_bar' $NAME $n $rows.Count) 'Yellow' } elseif ($diff) { Bar (T 'pf_same_bar' $NAME) 'Green' } else { Bar (T 'pf_bar' $NAME $rows.Count) 'DarkCyan' }
-}function Do-Diff {
+}
+function Do-Diff {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_diff')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readonly')
     $d = Read-Drone
     if (-not $d.id) { Fail (T 'f_noread'); return }
-    $name = Name-For $d.id
-    $who = $d.id; if ($name) { $who = "$($name.ToUpper()) $($d.id)" }
+    $name = Name-For $d.id; if (-not $name) { return }
+    $who = "$($name.ToUpper()) $($d.id)"
     Kv (T 'kv_drone') $who
     $orig = Orig-Values $d.id
     if ($null -eq $orig) { Fail (T 'df_none'); return }
@@ -1351,12 +1454,13 @@ function Do-Profile([string]$name, [bool]$diff) {
 function Do-Restore {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Rule (T 'r_restore')
+    if (-not (Need-Bind)) { return }
     if (-not (Acquire)) { return }
     Step (T 's_readdrone')
     $d = Read-Drone
     $id = $d.id
     if (-not $id) { Fail (T 'f_noread'); return }
-    $name = Name-For $id; if (-not $name) { $name = 'drone' }
+    $name = Name-For $id; if (-not $name) { return }
     $who = "$($name.ToUpper()) $id"
     Kv (T 'kv_drone') $who
     $orig = Orig-Values $id
@@ -1417,7 +1521,10 @@ function Dispatch([string]$line) {
     $low = $line.ToLower().Trim()
     try {
         if (-not $low) { return }
-        if ($low -match $script:STR['rx_bind']) { Do-Bind $line.Trim().Substring($Matches[0].Length) }
+        if ($low -match $script:STR['rx_bind']) {
+            $rest = $line.Trim().Substring($Matches[0].Length)
+            if ($rest -match '^\s*-ls\s*$') { Do-BindList } else { Do-Bind $rest }
+        }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
             if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and $rest.ToLower() -match '(^|\s)-m(\s|$)') { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }

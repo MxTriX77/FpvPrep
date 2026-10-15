@@ -6,7 +6,8 @@ param(
     [string]$Port,
     [string[]]$Commands = @('status'),
     [string]$OutFile,
-    [switch]$Save
+    [switch]$Save,
+    [string]$RequireId   # only run if the drone's id starts with this (the console's bound drone)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,6 +80,14 @@ try {
     $sp.Write('#')
     $banner = Read-Reply
     if ($banner -notmatch 'CLI') { throw "No CLI answer on $Port. Close Betaflight Configurator if it is open, then retry." }
+
+    # the drone must be the one bound in the console: its id is read before anything is sent
+    if ($RequireId) {
+        $sp.WriteLine('diff all'); $idText = Read-Reply 1500
+        $m = [regex]::Match($idText, 'mcu_id (\w{8})')
+        if (-not $m.Success) { throw 'Could not read the drone id.' }
+        if ($m.Groups[1].Value -ne $RequireId) { throw "Different drone: $($m.Groups[1].Value) (bound: $RequireId)" }
+    }
 
     $log = New-Object System.Text.StringBuilder
     $problems = @()

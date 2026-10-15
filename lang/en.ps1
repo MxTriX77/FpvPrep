@@ -56,6 +56,8 @@
     seen_yes = 'YES'; seen_no = 'no - new drone'
     kv_drone = 'drone'
     errors = @(
+        @('Different drone: (\w+) \(bound: (\w+)\)', 'a different drone is connected ({1}); the bound one is {2}. bind it first.'),
+        @('Could not read the drone id', 'could not read the drone''s id, so nothing was run.'),
         @('port is closed|does not exist', 'the drone dropped off USB in the middle. Check the cable, then run the command again.'),
         @('No serial port|No drone on USB', 'no drone on USB. Re-seat the cable.'),
         @('is busy', 'the port is busy. Close the Betaflight program or press Disconnect in it.'),
@@ -66,6 +68,11 @@
 
     # ---- bind
     r_bind = 'BIND {0}'
+    f_nobind = 'no drone was bound. bind NAME first.'
+    f_otherdrone = 'a different drone is connected ({0}); the bound one is {1}. bind it first.'
+    n_notbound = 'not the bound drone'
+    ls_keys = 'up/down choose   type to narrow   Enter bind   Esc cancel'
+    n_noprofiles = 'no saved profiles yet'
     s_read = 'reading config'
     f_which = 'which quad? type:  bind "NAME"'
     preset_std = 'standard for heavy 10/13 inch quads'
@@ -246,7 +253,7 @@
     # ---- help: two items = command and what it does, one item = a note, none = blank line
     r_help = 'COMMANDS'
     help = @(
-        @('bind "NAME"', 'find the drone on USB'),
+        @('bind [ NAME | -ls ]', 'find the drone on USB; -ls: choose from saved profiles'),
         @('status [ -p NAME ] [ -diff ]', 'check the drone; -diff: what changed; -p: a saved profile, no drone'),
         @('motors [ -N ]', 'motor run for N seconds, 1 if not given'),
         @(),
@@ -271,6 +278,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; bind_ls = 'bind -ls'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

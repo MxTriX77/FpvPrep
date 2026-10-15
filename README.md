@@ -11,6 +11,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | Command | What it does |
 |---|---|
 | `bind "NAME"` | Finds the drone on USB and shows what it is: id, name, firmware, whether it was bound before. It saves a copy of the drone as it arrived and writes nothing to it. NAME is whatever you call that kind of quad; no name = same as last time. |
+| `bind -ls` | Choose the quad name from the saved profiles, right on the command line: up/down, typing narrows the list, Enter binds, Esc leaves. |
 | `status` | The drone's current rates, a health check, and a green / yellow / red verdict. Writes nothing. |
 | `motors`, `motors -N` | All motors together at idle speed (4 on a quad, 8 on an over/under octo, whose two layers are compared each on its own), for about 1 second or N seconds (up to 10). It runs the same with props on or off. With props on, keep hands and the USB cable clear: if the cable comes out mid-run the stop command cannot reach the drone, and only the battery plug stops the motors. |
 | `set controls` (or `controls`) | Writes the type's saved stick settings (`presets\NAME.txt`) and its stiffness level into the drone, always in full, then reads back to confirm. A type with no file of its own gets the standard set for heavy quads (`presets\_default.txt`). |
@@ -30,6 +31,10 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `pid -m` | The same editor on the PID values the drone holds now (roll and pitch P, I, D, D min; yaw P and I), written as typed. Saved to the profile they become what every drone of the type gets, and what `pid stiffer` and `pid softer` scale from. |
 | `radio` | Reads an EdgeTX radio's stick calibration in USB storage mode. Read only. |
 | `help`, `exit` | |
+
+## Bind is a session
+
+The name in the firmware says nothing about which profile a drone belongs to, so the tool never guesses. `bind NAME` starts a session for the drone on the cable, and every command that writes to a drone or uses a profile works only on that drone, recognised by its id. With nothing bound it stops at once; with another drone on the cable it says so and writes nothing. The same drone unplugged and plugged back in carries on. `status`, `status -p`, `help`, `radio` and `bind -ls` work without a session. The motor run checks the drone's id itself before anything spins.
 
 ## What the health check reads
 

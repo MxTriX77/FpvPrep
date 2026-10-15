@@ -23,7 +23,10 @@ Set-Content (Join-Path $data 'presets\SIM.txt') -Encoding utf8 -Value @(
 $script:sent = @(); $script:saves = 0; $script:answers = @()
 function Wait-Port([int]$seconds = 15) { return $true }
 function Busy([int]$ms) { }
-function Run-BF([string[]]$commands, [bool]$save) { $script:sent += $commands; if ($save) { $script:saves++ }; return (Sim-FC $commands $save) }
+function Run-BF([string[]]$commands, [bool]$save) {
+    # bf.ps1's own id check (-RequireId), done the same way: before anything is sent
+    if ($script:requireId -and $script:fc.id.Substring(0, 8) -ne $script:requireId) { throw "Different drone: $($script:fc.id.Substring(0, 8)) (bound: $script:requireId)" }
+    $script:sent += $commands; if ($save) { $script:saves++ }; return (Sim-FC $commands $save) }
 function Read-Answer { $a = 'n'; if ($script:answers.Count) { $a = $script:answers[0]; $script:answers = @($script:answers | Select-Object -Skip 1) }; Write-Host $a; return $a }
 
 # Runs one console line and returns everything it printed as text
@@ -443,6 +446,47 @@ Check 'with -diff it is set against the standard and what differs is marked' ($s
 $o = Line "$($C.prof) NOSUCH"
 Check 'a name with no profile is said so' ($o.Contains((T 'f_nopreset' 'NOSUCH')) -and $script:sent.Count -eq $n0)
 
+# ---------------------------------------------------------------- bind -ls: choose a saved profile
+# the keyboard part is stood in for: it picks a name from the list it is given
+$script:offered = $null; $script:choice = 'GO'
+function Pick-Profile($names) { $script:offered = @($names); if ($script:choice) { return ($names | Where-Object { $_ -eq $script:choice } | Select-Object -First 1) }; return $null }
+$script:fc = New-FC 'abab55550000222233334444' 'LS20'
+$o = Line $C.bind_ls
+Check 'bind -ls offers the saved profiles, not the standard set' ($script:offered -contains 'DIF' -and $script:offered -contains 'CRV' -and -not ($script:offered -contains '_default'))
+$script:choice = 'DIF'; $before = $script:saves
+$o = Line $C.bind_ls
+Check 'the chosen name is bound, and nothing is written' ($o.Contains('abab5555') -and $o.Contains('DIF') -and (Last-Name) -eq 'DIF' -and $script:saves -eq $before)
+$script:choice = $null; Set-Content (Join-Path $data 'quads\last.txt') 'ZED' -Encoding utf8
+$o = Line $C.bind_ls
+Check 'leaving the list binds nothing' ((Last-Name) -eq 'ZED' -and -not $o.Contains('abab5555'))
+
+# ---------------------------------------------------------------- the session: bind first, this drone only
+$script:cur = $null   # as in a window just opened
+$script:fc = New-FC 'cdcd66660000222233334444' 'SES20'
+$n0 = $script:sent.Count; $o = Line $C.fix_ctl
+Check 'with nothing bound, a writing command stops before touching USB' ((Has $o 'f_nobind') -and $script:sent.Count -eq $n0)
+$o = Line $C.motors
+Check 'and so does the motor run' ((Has $o 'f_nobind') -and $script:sent.Count -eq $n0)
+$o = Line $C.status
+Check 'status still looks at any drone, and says it is not the bound one' ($o.Contains('cdcd6666') -and (Has $o 'n_notbound') -and (Has $o 'h_step'))
+$o = Line "$($C.prof) DIF"
+Check 'a saved profile can be read with nothing bound' ($o.Contains((T 'r_profile' 'DIF')) -and -not (Has $o 'f_nobind'))
+$o = Line "$($C.bind) SES"
+$script:fc = New-FC 'cdcd66660000222233334444' 'SES20'   # the same drone, unplugged and plugged back in
+$before = $script:saves; $o = Line $C.fix_ctl
+Check 'the same drone plugged back in carries on: it is known by its id' ($script:saves -eq $before + 1 -and -not (Has $o 'f_otherdrone'))
+$script:fc = New-FC 'efef66660000222233334444' 'SES21'   # another drone on the cable
+$before = $script:saves; $n0 = $script:sent.Count
+$o = Line $C.fix_ctl
+Check 'another drone on the cable: stopped, named, nothing written' ($o.Contains((T 'f_otherdrone' 'efef6666' 'cdcd6666')) -and $script:saves -eq $before)
+$n0 = $script:sent.Count; $o = Line $C.motors
+Check 'the motor run checks the id itself and nothing spins' (-not (@($script:sent | Select-Object -Skip $n0) -contains 'motor 255 1050') -and $o.Contains('efef6666') -and $o.Contains('cdcd6666'))
+$o = Line $C.yaw_more
+Check 'tuning words are locked the same way' ($o.Contains((T 'f_otherdrone' 'efef6666' 'cdcd6666')) -and $script:saves -eq $before)
+$o = Line $C.restore @('y')
+Check 'and so is restore' ($o.Contains((T 'f_otherdrone' 'efef6666' 'cdcd6666')) -and $script:saves -eq $before)
+$o = Line "$($C.bind) SES"; $o = Line $C.motors
+Check 'after binding the new drone everything works on it' ($o.Contains('1210') -and -not (Has $o 'f_otherdrone'))
 # ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)
