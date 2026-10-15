@@ -487,7 +487,21 @@ $o = Line $C.restore @('y')
 Check 'and so is restore' ($o.Contains((T 'f_otherdrone' 'efef6666' 'cdcd6666')) -and $script:saves -eq $before)
 $o = Line "$($C.bind) SES"; $o = Line $C.motors
 Check 'after binding the new drone everything works on it' ($o.Contains('1210') -and -not (Has $o 'f_otherdrone'))
-# ---------------------------------------------------------------- the safety limit
+# ---------------------------------------------------------------- set -p NAME: a saved profile changed offline
+$n0 = $script:sent.Count; $s0 = $script:saves
+$o = Line "$($C.ptune) dif $($C.roll_more)"
+Check 'set -p NAME roll more steps the profile, no drone touched' ((Preset 'DIF') -match 'set roll_rc_rate = 6' -and (Preset 'DIF') -match 'set roll_srate = 25' -and $o.Contains('50 -> 60') -and $script:sent.Count -eq $n0 -and $script:saves -eq $s0)
+$o = Line "$($C.ptune) DIF $(Again $C.thr_softer 2)"
+Check 'throttle softer twice on the profile''s own curve' ((Preset 'DIF') -match 'set thr_expo = 60' -and $o.Contains('100 / 80 -> 100 / 60') -and $script:sent.Count -eq $n0)
+$o = Line "$($C.ptune) DIF $($C.pid_stiffer)" @('y')
+Check 'pid stiffer moves the profile''s level, after asking' ((Preset 'DIF') -match '# stiffness: 2' -and (Has $o 'w_risky') -and $script:sent.Count -eq $n0)
+$o = Line "$($C.ptune) TWO $($C.thr_softer)"
+Check 'a profile with no throttle curve cannot get one offline' ((Has $o 'f_pnothr') -and -not ((Preset 'TWO') -match 'thr_expo'))
+$o = Line "$($C.ptune) NOSUCH $($C.yaw_more)"
+Check 'a name with no profile is said so, nothing created' ($o.Contains((T 'f_nopreset' 'NOSUCH')) -and -not (Test-Path (Join-Path $data 'presets\NOSUCH.txt')))
+$script:cur = $null; $o = Line "$($C.ptune) DIF $($C.roll_less)"
+Check 'it needs no bind' ((Preset 'DIF') -match 'set roll_rc_rate = 5' -and -not (Has $o 'f_nobind'))
+
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)
 $assign = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$forbidden' }, $true)

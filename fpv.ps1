@@ -797,6 +797,13 @@ function Do-Horizon([string]$rest) {
 # Steps: roll and pitch 10 deg/s at centre and 30 at full stick, yaw 10 and 40, $times over
 # (the direction word said twice is two steps). Only for drones whose rates are in the ACTUAL format.
 # Throttle is not an axis here; it has its own command below.
+# One axis $times steps on: near centre (rc_rate) and full stick (srate), both in tens of deg/s
+function Axis-Next([string]$a, [int]$c0, [int]$m0, [int]$dir, [int]$times) {
+    $base = 3; if ($a -eq 'yaw') { $base = 4 }
+    $c1 = [Math]::Min(30, [Math]::Max(1, $c0 + $dir * $times))
+    $m1 = [Math]::Min(100, [Math]::Max($c1 + 1, $m0 + $dir * $base * $times))
+    return @($c1, $m1)
+}
 function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_more'); if ($dir -lt 0) { $word = (T 'w_less') }
@@ -818,8 +825,7 @@ function Do-Tune([string[]]$axes, [int]$dir, [int]$times) {
         if ($null -eq $d.vals["${a}_rc_rate"] -or $null -eq $d.vals["${a}_srate"]) { Fail (T 'f_noaxis' $a); return }
         $base = 3; if ($a -eq 'yaw') { $base = 4 }
         $c0 = [int]$d.vals["${a}_rc_rate"]; $m0 = [int]$d.vals["${a}_srate"]
-        $c1 = [Math]::Min(30, [Math]::Max(1, $c0 + $dir * $times))
-        $m1 = [Math]::Min(100, [Math]::Max($c1 + 1, $m0 + $dir * $base * $times))
+        $c1, $m1 = Axis-Next $a $c0 $m0 $dir $times
         $label = (T "ax_$a").ToLower()
         if ($c1 -ne $c0) { $plan["${a}_rc_rate"] = $c1; Kv (T 'kv_centre' $label) "$($c0 * 10) -> $($c1 * 10) $(T 'unit_dps')" }
         if ($m1 -ne $m0) { $plan["${a}_srate"] = $m1; Kv (T 'kv_full' $label) "$($m0 * 10) -> $($m1 * 10) $(T 'unit_dps')" }
@@ -1064,6 +1070,21 @@ function Do-ThrEdit {
     Write-Host ''
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
 }
+# The expo one throttle step away from $expo: $dir 1 softer, -1 stiffer, $times steps
+function Thr-Next([int]$mid, [int]$expo, [int]$dir, [int]$times) {
+    $best = Thr-Softest $mid
+    $step = 10 * [Math]::Max(1, $times)
+    if ($dir -gt 0) {
+        # softer: towards the widest stretch, never past it and never into a dead part
+        $new = $expo + [Math]::Sign($best - $expo) * [Math]::Min($step, [Math]::Abs($best - $expo))
+        while ($new -ne $expo -and (Thr-Dead $mid $new)) { $new -= [Math]::Sign($new - $expo) }
+    } else {
+        # stiffer: the other way, as far as expo goes
+        $away = [Math]::Sign($expo - $best); if ($away -eq 0) { $away = 1; if ($best -gt 50) { $away = -1 } }
+        $new = [Math]::Min(100, [Math]::Max(0, $expo + $away * $step))
+    }
+    return $new
+}
 function Do-Throttle([int]$dir, [int]$times) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $word = (T 'w_softer'); if ($dir -lt 0) { $word = (T 'w_stiffer') }
@@ -1088,17 +1109,8 @@ function Do-Throttle([int]$dir, [int]$times) {
         # an old version's own curve is not this drone's: start from what its other rate profiles hold
         $mid, $expo = $d.otherThr[0] -split '/' | ForEach-Object { [int]$_ }
     }
-    $best = Thr-Softest $mid
-    $step = 10 * [Math]::Max(1, $times)
-    if ($dir -gt 0) {
-        # softer: towards the widest stretch, never past it and never into a dead part
-        $new = $expo + [Math]::Sign($best - $expo) * [Math]::Min($step, [Math]::Abs($best - $expo))
-        while ($new -ne $expo -and (Thr-Dead $mid $new)) { $new -= [Math]::Sign($new - $expo) }
-    } else {
-        # sharper: the other way, as far as expo goes
-        $away = [Math]::Sign($expo - $best); if ($away -eq 0) { $away = 1; if ($best -gt 50) { $away = -1 } }
-        $new = [Math]::Min(100, [Math]::Max(0, $expo + $away * $step))
-    }
+    $new = Thr-Next $mid $expo $dir $times
+
     if ($new -eq $expo) { Note (T 'n_limit' (T 'kv_thr')); return }
     Kv (T 'kv_thr') "$has -> $mid / $new"
 
@@ -1116,6 +1128,67 @@ function Do-Throttle([int]$dir, [int]$times) {
     Bar (T 'b_done' "$NAME $id" (Took $clock)) 'Green'
 }
 
+# set -p NAME <tuning words>: the same tuning words, applied to a saved profile with no drone and
+# no USB (user, 2026-10-15: "making changes offline right in the profile"). Rates and the
+# throttle curve step from the values in the file; pid moves the profile's level. Every drone of
+# that name gets the result on its next set controls. Outside the session: no drone is involved.
+function Do-ProfileTune([string]$name, [string]$what) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $NAME = $name.ToUpper()
+    $file = Join-Path $presets "$name.txt"
+    $low = $what.ToLower().Trim()
+    if (-not (Test-Path $file)) { Rule (T 'r_ptune' $NAME $what.ToUpper()); Fail (T 'f_nopreset' $NAME); return }
+    $own = Read-Settings $file
+    $plan = [ordered]@{}
+    if ($low -match $script:STR['rx_pid']) {
+        $rest = $low.Substring($Matches[0].Length); $dir = 0
+        if ($rest -match $script:STR['rx_stiffer']) { $dir = Times $rest 'rx_stiffer' } elseif ($rest -match $script:STR['rx_softer']) { $dir = -(Times $rest 'rx_softer') }
+        if (-not $dir) { Note (T 'n_pidwhat'); return }
+        Rule (T 'r_ptune' $NAME $what.ToUpper())
+        $old = Stiff-Level $name; $new = [Math]::Max(-2, [Math]::Min(3, $old + $dir))
+        if ($new -eq $old) { Note (T 'n_stifflimit' (Signed $old)); return }
+        Kv (T 'kv_level') "$(Signed $old) -> $(Signed $new)"
+        Write-Host "$IND[!] $(T 'w_risky')" -ForegroundColor Yellow
+        if (-not (Ask (T 'q_apply'))) { Note (T 'n_nothing'); return }
+        Set-Stiff-Level $name $new
+    }
+    elseif ($low -match $script:STR['rx_thr']) {
+        $rest = $low.Substring($Matches[0].Length); $dir = 0
+        if ($rest -match $script:STR['rx_thr_softer']) { $dir = 1; $times = Times $rest 'rx_thr_softer' } elseif ($rest -match $script:STR['rx_thr_sharper']) { $dir = -1; $times = Times $rest 'rx_thr_sharper' }
+        if (-not $dir) { Note (T 'n_thrwhat'); return }
+        Rule (T 'r_ptune' $NAME $what.ToUpper())
+        # with no drone there is no builder's curve to start from: the profile must already have one
+        if ($null -eq $own['thr_mid'] -or $null -eq $own['thr_expo']) { Fail (T 'f_pnothr'); return }
+        $mid = [int]$own['thr_mid']; $expo = [int]$own['thr_expo']
+        $new = Thr-Next $mid $expo $dir $times
+        if ($new -eq $expo) { Note (T 'n_limit' (T 'kv_thr')); return }
+        Kv (T 'kv_thr') "$mid / $expo -> $mid / $new"
+        $plan['thr_mid'] = $mid; $plan['thr_expo'] = $new
+    }
+    else {
+        $axes = @(); foreach ($a in 'yaw', 'pitch', 'roll') { if ($low -match $script:STR["rx_$a"]) { $axes += $a } }
+        $dir = 0; $times = 1
+        if ($low -match $script:STR['rx_more']) { $dir = 1; $times = Times $low 'rx_more' } elseif ($low -match $script:STR['rx_less']) { $dir = -1; $times = Times $low 'rx_less' }
+        if (-not $axes.Count -or -not $dir) { Note (T 'n_ptunewhat'); return }
+        Rule (T 'r_ptune' $NAME $what.ToUpper())
+        if ($own['rates_type'] -and "$($own['rates_type'])" -ne 'ACTUAL') { Fail (T 'f_notactual' $own['rates_type']); return }
+        foreach ($a in $axes) {
+            if ($null -eq $own["${a}_rc_rate"] -or $null -eq $own["${a}_srate"]) { Fail (T 'f_noaxis' $a); return }
+            $c0 = [int]$own["${a}_rc_rate"]; $m0 = [int]$own["${a}_srate"]
+            $c1, $m1 = Axis-Next $a $c0 $m0 $dir $times
+            $label = (T "ax_$a").ToLower()
+            if ($c1 -ne $c0) { $plan["${a}_rc_rate"] = $c1; Kv (T 'kv_centre' $label) "$($c0 * 10) -> $($c1 * 10) $(T 'unit_dps')" }
+            if ($m1 -ne $m0) { $plan["${a}_srate"] = $m1; Kv (T 'kv_full' $label) "$($m0 * 10) -> $($m1 * 10) $(T 'unit_dps')" }
+            if ($c1 -eq $c0 -and $m1 -eq $m0) { Note (T 'n_limit' $label) }
+        }
+        if (-not $plan.Count) { Note (T 'n_nochange'); return }
+    }
+    if ($plan.Count) { Save-Preset $name $plan }
+    Ok (T 'ok_remembered' $NAME)
+    Log "$name profile tune '$what' $(Pairs $plan)"
+    Write-Host ''
+    Bar (T 'b_ptuned' $NAME (Took $clock)) 'Green'
+}
 # ---------------------------------------------------------------- pid stiffer / pid softer
 # Scales roll and pitch P, I and D together, 10 % of the drone's ORIGINAL values per level,
 # between -2 and +3. Why relative and not calculated outright: an absolute PID worked out from
@@ -1527,7 +1600,8 @@ function Dispatch([string]$line) {
         }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and $rest.ToLower() -match '(^|\s)-m(\s|$)') { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
+            if ($rest -match '^\s*-p\s+("([^"]+)"|(\S+))\s*(.*)$') { Do-ProfileTune "$($Matches[2])$($Matches[3])" $Matches[4] }
+            elseif ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and $rest.ToLower() -match '(^|\s)-m(\s|$)') { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
         }
         elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {
