@@ -502,6 +502,10 @@ $o = Line "$($C.ptune) NOSUCH $($C.yaw_more)"
 Check 'a name with no profile is said so, nothing created' ($o.Contains((T 'f_nopreset' 'NOSUCH')) -and -not (Test-Path (Join-Path $data 'presets\NOSUCH.txt')))
 $script:cur = $null; $o = Line "$($C.ptune) DIF $($C.roll_less)"
 Check 'it needs no bind' ((Preset 'DIF') -match 'set roll_rc_rate = 5' -and -not (Has $o 'f_nobind'))
+# the same with the option after the tuning words, in the language's own option word
+$popt = '-p'; if ($script:STR['opt']) { $popt = '-' + ("$($script:STR['opt'].p)" -split '\|')[-1] }
+$o = Line "$($C.roll_more) $popt DIF"
+Check 'roll more -p NAME also changes the profile, no drone touched' ((Preset 'DIF') -match 'set roll_rc_rate = 6' -and $o.Contains('50 -> 60') -and $script:sent.Count -eq $n0)
 
 # ---------------------------------------------------------------- rm NAME: remove a saved profile
 $o = Line "$($C.rem) CRV" @('n')

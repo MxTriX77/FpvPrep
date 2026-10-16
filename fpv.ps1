@@ -45,7 +45,7 @@ $script:pending = $false; $script:col = 62; $script:frame = 0
 # The version, raised with every published change: the middle number for new or changed
 # commands, the last for fixes and looks, the first when the way of working changes (2.0: bind
 # became a session). History in the README.
-$VERSION = '2.3'
+$VERSION = '2.4'
 $script:cur = $null       # the drone bound in this window: id, name, craft
 $script:motorLog = ''
 
@@ -522,7 +522,7 @@ function Pick-Profile($names) {
         & $put $rowY (' ' * $width) 'Gray'
         & $put $rowY '  FPV' 'Cyan'; & $say ':\> ' 'Green'
         # the row as if typed: in the window's own text colour, like every typed command
-        $tail = '-ls'; if ($result) { $tail = $result }; & $say "$($script:STR['test_words'].bind) $tail" $fg
+        $tail = '-ls'; if ($script:STR['opt_ls_word']) { $tail = $script:STR['opt_ls_word'] }; if ($result) { $tail = $result }; & $say "$($script:STR['test_words'].bind) $tail" $fg
         [Console]::ForegroundColor = $fg; [Console]::BackgroundColor = $bg; [Console]::CursorVisible = $true
         [Console]::SetCursorPosition(0, $rowY + 1)
     }
@@ -1599,60 +1599,87 @@ function Do-Radio {
     Log "radio check bad=$bad"
 }
 
+# Splits a text into lines of at most $max characters, at spaces.
+function Wrap-Text([string]$s, [int]$max) {
+    $out = @(); $cur = ''
+    foreach ($word in ($s -split ' ')) {
+        if ($cur -and ($cur.Length + 1 + $word.Length) -gt $max) { $out += $cur; $cur = $word } elseif ($cur) { $cur += " $word" } else { $cur = $word }
+    }
+    return , @($out + $cur)
+}
 function Help {
     Rule (T 'r_help')
     Write-Host ''
-    $wide = ($script:STR['help'] | Where-Object { $_.Count -eq 2 } | ForEach-Object { $_[0].TrimEnd().Length } | Measure-Object -Maximum).Maximum + 4
+    # The column is as wide as the ordinary commands; a longer one (over 48) puts its words on
+    # the next line. Words wrap at the window's edge and go on in their own column.
+    $lens = @($script:STR['help'] | Where-Object { $_.Count -eq 2 } | ForEach-Object { $_[0].TrimEnd().Length })
+    $wide = (@($lens | Where-Object { $_ -le 48 }) | Measure-Object -Maximum).Maximum + 3
+    $screen = 100; try { if ([Console]::WindowWidth -gt 40) { $screen = [Console]::WindowWidth } } catch { }
+    $room = [Math]::Max(24, $screen - 1 - $IND.Length - $wide)
+    $gap = ' ' * ($IND.Length + $wide)
     foreach ($h in $script:STR['help']) {
         if ($h.Count -eq 0) { Write-Host ''; continue }
         if ($h.Count -eq 1) { Note $h[0]; continue }
         # the command word in cyan, its options in yellow, the brackets and bars between them dim
-        $cmd = $h[0].TrimEnd().PadRight($wide); $cut = $cmd.IndexOf('['); if ($cut -lt 0) { $cut = $cmd.Length }
+        $c0 = $h[0].TrimEnd(); $long = $c0.Length -ge $wide
+        $cmd = $c0; if (-not $long) { $cmd = $c0.PadRight($wide) }
+        $cut = $cmd.IndexOf('['); if ($cut -lt 0) { $cut = $cmd.Length }
         Write-Host $IND -NoNewline; Write-Host $cmd.Substring(0, $cut) -ForegroundColor Cyan -NoNewline; foreach ($piece in [regex]::Split($cmd.Substring($cut), '([\[\]|])')) { $pc = 'Yellow'; if ($piece -match '^[\[\]|]$') { $pc = 'DarkGray' }; Write-Host $piece -ForegroundColor $pc -NoNewline }
-        Write-Host $h[1] -ForegroundColor Gray
+        if ($long -and $h[1]) { Write-Host ''; Write-Host $gap -NoNewline }
+        $parts = Wrap-Text $h[1] $room
+        Write-Host $parts[0] -ForegroundColor Gray
+        for ($i = 1; $i -lt $parts.Count; $i++) { Write-Host ($gap + $parts[$i]) -ForegroundColor Gray }
     }
 }
 
 # ---------------------------------------------------------------- dispatch
 # A direction word said more than once is that many steps at once: "yaw more more" is two.
 function Times([string]$text, [string]$key) { return [Math]::Max(1, [regex]::Matches($text, $script:STR[$key]).Count) }
+# Option words after the dash (-m, -p, -ls) come from the language file's 'opt' table, so each
+# language can have its own; without an entry the English word is the only one.
+function Opt([string]$k) { $o = $script:STR['opt']; if ($o -and $o[$k]) { return "(?:$($o[$k]))" }; return "(?:$k)" }
+function Opt-M([string]$text) { return $text -match ('(?i)(^|\s)-' + (Opt 'm') + '(\s|$)') }
 function Dispatch([string]$line) {
     $low = $line.ToLower().Trim()
     try {
         if (-not $low) { return }
         if ($low -match $script:STR['rx_bind']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest -match '^\s*-ls\s*$') { Do-BindList } else { Do-Bind $rest }
+            if ($rest -match ('(?i)^\s*-' + (Opt 'ls') + '\s*$')) { Do-BindList } else { Do-Bind $rest }
         }
         elseif ($low -match $script:STR['rx_fix']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest -match '^\s*-p\s+("([^"]+)"|(\S+))\s*(.*)$') { Do-ProfileTune "$($Matches[2])$($Matches[3])" $Matches[4] }
-            elseif ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and $rest.ToLower() -match '(^|\s)-m(\s|$)') { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
+            if ($rest -match ('(?i)^\s*-' + (Opt 'p') + '\s+("([^"]+)"|(\S+))\s*(.*)$')) { Do-ProfileTune "$($Matches[2])$($Matches[3])" $Matches[4] }
+            elseif ($rest.ToLower() -match $script:STR['rx_name']) { Do-Name $rest.Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_sticks']) { Do-Sticks $rest.ToLower().Substring($Matches[0].Length) } elseif ($rest.ToLower() -match $script:STR['rx_ctl'] -and (Opt-M $rest)) { Do-Edit } elseif ($rest.ToLower() -match $script:STR['rx_horizon']) { Do-Horizon $rest.ToLower().Substring($Matches[0].Length) } else { Do-Fix $rest }
+        }
+        elseif ($low -notmatch $script:STR['rx_status'] -and $low -notmatch $script:STR['rx_remove'] -and ($pm = [regex]::Match($line, '(?i)(^|\s)-' + (Opt 'p') + '\s+("([^"]+)"|([^-\s]\S*))')).Success) {
+            # tuning words with -p NAME anywhere ("yaw more -p NAME"): the saved profile, as set -p NAME
+            Do-ProfileTune "$($pm.Groups[3].Value)$($pm.Groups[4].Value)" $line.Remove($pm.Index, $pm.Length).Trim()
         }
         elseif ($low -match $script:STR['rx_fix_short']) { Do-Fix $line }   # the bare word, without "set"
         elseif ($low -match $script:STR['rx_pid']) {
             # checked before the axis words, so "pid softer" is never read as an axis command
             $rest = $low.Substring($Matches[0].Length)
-            if ($rest -match '(^|\s)-m(\s|$)') { Do-PidEdit }
+            if (Opt-M $rest) { Do-PidEdit }
             elseif ($rest -match $script:STR['rx_stiffer']) { Do-Stiff (Times $rest 'rx_stiffer') } elseif ($rest -match $script:STR['rx_softer']) { Do-Stiff (-(Times $rest 'rx_softer')) } else { Note (T 'n_pidwhat') }
         }
         elseif ($low -match $script:STR['rx_thr']) {
             # its own words too, and also ahead of the axis words
             $rest = $low.Substring($Matches[0].Length)
-            if ($rest -match '(^|\s)-m(\s|$)') { Do-ThrEdit }
+            if (Opt-M $rest) { Do-ThrEdit }
             elseif ($rest -match $script:STR['rx_thr_softer']) { Do-Throttle 1 (Times $rest 'rx_thr_softer') } elseif ($rest -match $script:STR['rx_thr_sharper']) { Do-Throttle -1 (Times $rest 'rx_thr_sharper') } else { Note (T 'n_thrwhat') }
         }
         elseif ($low -match $script:STR['rx_help']) { Help }
         elseif ($low -match $script:STR['rx_status']) {
             # -p NAME: a saved profile, no drone needed. The name keeps the letters as typed.
-            if ($line -match '(?i)(^|\s)-p(\s+("([^"]+)"|([^-\s]\S*)))?(\s|$)') { Do-Profile ("$($Matches[4])$($Matches[5])") ([bool]($low -match $script:STR['rx_diff'])) }
+            if ($line -match ('(?i)(^|\s)-' + (Opt 'p') + '(\s+("([^"]+)"|([^-\s]\S*)))?(\s|$)')) { Do-Profile ("$($Matches[4])$($Matches[5])") ([bool]($low -match $script:STR['rx_diff'])) }
             elseif ($low -match $script:STR['rx_diff']) { Do-Diff } else { Do-Status }
         }
         elseif ($low -match $script:STR['rx_restore']) { Do-Restore }
         elseif ($low -match $script:STR['rx_remove']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
             # rm NAME (the older rm -p NAME still works)
-            if ($rest -match '^\s*(-p\s+)?("([^"]+)"|([^-\s]\S*))\s*$') { Do-RemoveProfile "$($Matches[3])$($Matches[4])" } else { Note (T 'n_removewhat') }
+            if ($rest -match ('(?i)^\s*(-' + (Opt 'p') + '\s+)?("([^"]+)"|([^-\s]\S*))\s*$')) { Do-RemoveProfile "$($Matches[3])$($Matches[4])" } else { Note (T 'n_removewhat') }
         }
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {
@@ -1661,7 +1688,7 @@ function Dispatch([string]$line) {
             $dir = 0; $times = 1
             if ($low -match $script:STR['rx_more']) { $dir = 1; $times = Times $low 'rx_more' } elseif ($low -match $script:STR['rx_less']) { $dir = -1; $times = Times $low 'rx_less' }
 
-            if ($axes.Count -and $low -match '(^|\s)-m(\s|$)') { Do-Edit $axes }
+            if ($axes.Count -and (Opt-M $low)) { Do-Edit $axes }
             elseif ($axes.Count -and $dir) { Do-Tune $axes $dir $times }
 
             elseif ($low -match $script:STR['rx_motor']) { if ($low -match '(\d+)') { Do-Motors ([int]$Matches[1]) } else { Do-Motors 1 } }

@@ -18,7 +18,7 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 | `set controls -m` | Opens a full-screen editor on the rates the drone holds now (roll, pitch, yaw: near centre, full stick, expo). Up/down move, digits type, left/right step a value or choose where to write: this drone only, or this drone and the type's profile. Enter writes and closes, Esc cancels. |
 | `set sound off`, `set sound on` | Off switches the buzzer and the motor beacon off; on brings the buzzer back (the beacon stays off). Remembered for the quad type, so `set controls` applies it to every drone of that type. |
 | `set horizon on`, `set horizon off` | Shows or hides the horizon line on the OSD, where the drone already has it. Remembered for the quad type. |
-| `set -p NAME yaw more`, `set -p NAME throttle softer`, `set -p NAME pid stiffer` | The tuning words applied to a saved profile, with no drone connected. Every drone of that name gets the result on its next `set controls`. A profile with no throttle curve gets one only with a drone. |
+| `yaw more -p NAME`, `throttle softer -p NAME`, `pid stiffer -p NAME` (or `set -p NAME yaw more`) | The tuning words applied to a saved profile, with no drone connected. Every drone of that name gets the result on its next `set controls`. A profile with no throttle curve gets one only with a drone. |
 | `set name NAME` | Changes the name the drone shows on its OSD. Latin letters, digits, space and `_ . -`, up to 16 characters. |
 | `set sticks on`, `set sticks off` | Shows or hides the two stick pictures on the OSD, side by side at the bottom centre (Mode 2). Their size is fixed by the firmware. Written to the connected drone and remembered for the quad type, so `set controls` gives it to every drone of that type. |
 | `yaw more`, `pitch roll less`, `yaw more more` | Adjusts rates in fixed steps. Shows old and new values and writes them. The change is remembered for the quad type; the opposite word undoes it. Say the word again for that many steps at once. |
@@ -55,6 +55,7 @@ The banner shows the version. The middle number goes up with new or changed comm
 | 2.2 | Battery sag compensation in the standard set; rm -p NAME; no warning for a radio that is off |
 | 2.2.1 | The banner says what its link line means |
 | 2.3 | rm NAME instead of rm -p NAME |
+| 2.4 | Fixed columns and cosmetics: help fits the window; -p NAME can follow the tuning words (yaw more -p NAME) |
 ## What the health check reads
 
 Sensors present, accelerometer calibrated, processor load, sensor bus errors, battery cells and volts per cell, radio link, each ESC answering (motors at rest), and the reasons Betaflight would refuse to arm. Everything healthy is packed into two lines; each problem gets one line.
