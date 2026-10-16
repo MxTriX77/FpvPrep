@@ -107,6 +107,7 @@ $o = Line $C.fix_ctl
 Check 'one drone''s own values are written on top of the type''s' ((Val 'thr_mid') -eq '100' -and (Val 'thr_expo') -eq '100' -and (Val 'roll_srate') -eq '25')
 [IO.File]::Delete((Join-Path $data 'presets\drones\5150aaaa.txt'))
 $script:fc.rates.thr_mid = '50'; $script:fc.rates.thr_expo = '25'
+Check 'the standard set switches battery sag compensation on' ((Get-Content (Join-Path $repo 'presets\_default.txt') -Raw) -match '(?m)^set vbat_sag_compensation = 100\s*$')
 Check 'the standard set shipped with the tool leaves the throttle curve alone' (-not ((Get-Content (Join-Path $repo 'presets\_default.txt') -Raw) -match '(?m)^set (thr_|throttle)'))
 
 # ---------------------------------------------------------------- axis tuning
@@ -173,7 +174,7 @@ $script:fc.rpm = @(1200, 1195, 1188, 1210)
 # ---------------------------------------------------------------- health check
 $script:fc.volts = 2960; $script:fc.flags = 'RXLOSS CLI THROTTLE'; $script:fc.master.acc_calibration = '0,0,0,0'
 $o = Line $C.status
-Check 'status lists battery, radio, accelerometer and arming remarks' ($o.Contains((T 'h_batt_low' 8 '3.70')) -and (Has $o 'h_radio_off') -and (Has $o 'h_acc_uncal') -and $o.Contains((T 'arm_THROTTLE')))
+Check 'status lists battery, accelerometer and arming remarks, but not a radio that is off' ($o.Contains((T 'h_batt_low' 8 '3.70')) -and -not (Has $o 'h_radio_off') -and (Has $o 'h_acc_uncal') -and $o.Contains((T 'arm_THROTTLE')))
 Check 'remarks make the verdict yellow, not red' ($o.Contains(((T 'v_warn') -f 'SIM 5150aaaa', '').Substring(0, 24)))
 $script:fc.volts = 3381; $script:fc.flags = 'ARMSWITCH CLI'; $script:fc.master.acc_calibration = '58,7,-6,1'
 $o = Line $C.status
@@ -502,6 +503,17 @@ Check 'a name with no profile is said so, nothing created' ($o.Contains((T 'f_no
 $script:cur = $null; $o = Line "$($C.ptune) DIF $($C.roll_less)"
 Check 'it needs no bind' ((Preset 'DIF') -match 'set roll_rc_rate = 5' -and -not (Has $o 'f_nobind'))
 
+# ---------------------------------------------------------------- rm -p NAME: remove a saved profile
+$o = Line "$($C.rem) CRV" @('n')
+Check 'rm -p asks first, and no means nothing is removed' ($o.Contains((T 'q_remove' 'CRV').Substring(0, 10)) -and (Test-Path (Join-Path $data 'presets\CRV.txt')))
+$o = Line "$($C.rem) CRV" @('y')
+Check 'yes removes it and keeps a copy' (-not (Test-Path (Join-Path $data 'presets\CRV.txt')) -and @(Get-ChildItem (Join-Path $data 'quads') -Filter 'removed_*_CRV.txt').Count -eq 1 -and $o.Contains(((T 'b_removed') -f 'CRV', '').Substring(0, 12)))
+$o = Line "$($C.rem) _default" @('y')
+Check 'the standard set cannot be removed' ((Has $o 'f_noremove_std') -and (Test-Path (Join-Path $data 'presets\_default.txt')))
+$o = Line "$($C.rem) NOSUCH" @('y')
+Check 'a name with no profile is said so' ($o.Contains((T 'f_nopreset' 'NOSUCH')))
+
+# ---------------------------------------------------------------- the safety limit
 # everything the console ever sent must pass bf.ps1's own guard
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'bf.ps1'), [ref]$null, [ref]$null)
 $assign = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$forbidden' }, $true)

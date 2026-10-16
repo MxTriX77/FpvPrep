@@ -17,6 +17,7 @@
     rx_status = '^(status)\b'
     rx_diff = '(^|\s)-?-?(diff|d)(\s|$)'
     rx_restore = '^(restore)$'
+    rx_remove = '^(rm|rem|remove|del|delete)(\s+|$)'
     rx_radio  = '^(radio|tx12)\b'
     rx_exit   = '^(exit|quit|q)$'
     rx_radio_name = '^(TX12|radio)$'
@@ -240,9 +241,16 @@
     df_pid4 = '{0} P / I / D / Dmin'; df_pid2 = '{0} P / I'
     df_deadband = 'deadband, sticks / yaw'
     df_smooth = 'stick smoothing'
+    df_sag = 'battery sag compensation'
     df_ff = 'feedforward, fade / jitter / boost'
     df_times = '{0} x {1}'
     r_restore = 'RESTORE'
+    r_remove = 'REMOVE  //  PROFILE {0}'
+    n_removewhat = 'rm -p NAME'
+    f_noremove_std = 'the standard set cannot be removed'
+    q_remove = 'remove the profile {0}?'
+    n_removed_copy = 'a copy is kept: quads\{0}'
+    b_removed = '{0}  //  PROFILE REMOVED  //  {1}'
     n_restore_same = 'nothing to restore: the drone is as it arrived.'
     b_restored = '{0}  //  RESTORED  //  {1}'
     s_readonly = 'reading config (nothing is changed)'
@@ -273,6 +281,7 @@
         @('pid [ stiffer | softer | -m ]', 'roll and pitch PID, 10% a step; -m: type them by hand. risky'),
         @('say the word again for a bigger step:  yaw more more'),
         @(),
+        @('rm -p NAME', 'remove a saved profile'),
         @('restore', 'put the drone back as it arrived'),
         @('radio', 'radio stick calibration'),
         @('help / exit', '')
@@ -283,6 +292,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; roll_more = 'roll more'; roll_less = 'roll less'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; bind_ls = 'bind -ls'; ptune = 'set -p'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; bind_ls = 'bind -ls'; ptune = 'set -p'; rem = 'rm -p'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

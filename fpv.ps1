@@ -339,7 +339,8 @@ function Health($d) {
     if (-not $hasBatt) { $problems += , @(1, (T 'h_nobatt')) }
 
     $flags = @(); if ($h -match 'Arming disable flags:\s*(.*)') { $flags = @($Matches[1].Trim() -split '\s+' | Where-Object { $_ }) }
-    if ($flags -contains 'RXLOSS') { $problems += , @(1, (T 'h_radio_off')) } else { $chips += (T 'chip_radio'), (T 'chip_linked') }
+    # a radio that is off is not a remark (user, 2026-10-16): it is often off during prep. Linked shows as a chip.
+    if (-not ($flags -contains 'RXLOSS')) { $chips += (T 'chip_radio'), (T 'chip_linked') }
 
     # ESCs at rest. Only meaningful with the battery in; a silent ESC is a caution here and a
     # hard failure only when a motor run confirms it.
@@ -352,6 +353,7 @@ function Health($d) {
 
     # Why it would refuse to arm. Transient and bench-normal reasons are left out.
     $ignore = @('CLI', 'MSP', 'RXLOSS', 'BOOTGRACE', 'CALIB', 'NOPREARM', 'NOGYRO')
+    if ($flags -contains 'RXLOSS') { $ignore += 'FAILSAFE', 'BADRX' }   # these only follow from the radio being off
     if (-not $hasBatt) { $ignore += 'RPMFILTER', 'DSHOT_TELEM', 'DSHOT_BBANG' }
     $blockers = @()
     foreach ($f in $flags) {
@@ -1189,6 +1191,25 @@ function Do-ProfileTune([string]$name, [string]$what) {
     Write-Host ''
     Bar (T 'b_ptuned' $NAME (Took $clock)) 'Green'
 }
+# rm -p NAME: delete a saved profile, after asking. A copy is kept in quads\ so a slip can be undone
+# by hand. The standard set can't be removed. No drone and no session involved.
+function Do-RemoveProfile([string]$name) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    if (-not $name) { Note (T 'n_removewhat'); return }
+    $NAME = $name.ToUpper()
+    Rule (T 'r_remove' $NAME)
+    if ($name -eq '_default') { Fail (T 'f_noremove_std'); return }
+    $file = Join-Path $presets "$name.txt"
+    if (-not (Test-Path $file)) { Fail (T 'f_nopreset' $NAME); return }
+    if (-not (Ask (T 'q_remove' $NAME))) { Note (T 'n_nothing'); return }
+    $keep = "removed_$(Get-Date -Format 'yyyy-MM-dd_HHmm')_$name.txt"
+    Copy-Item $file (Join-Path $quads $keep) -Force
+    [IO.File]::Delete($file)
+    Note (T 'n_removed_copy' $keep)
+    Log "$name profile removed, copy $keep"
+    Write-Host ''
+    Bar (T 'b_removed' $NAME (Took $clock)) 'Green'
+}
 # ---------------------------------------------------------------- pid stiffer / pid softer
 # Scales roll and pitch P, I and D together, 10 % of the drone's ORIGINAL values per level,
 # between -2 and +3. Why relative and not calculated outright: an absolute PID worked out from
@@ -1354,7 +1375,7 @@ function Do-Status {
 # What the tool can change on a drone, and so what is compared with how the drone arrived.
 $trackKeys = @('rates_type') + @('roll', 'pitch', 'yaw' | ForEach-Object { "${_}_rc_rate"; "${_}_srate"; "${_}_expo" }) +
              'thr_mid', 'thr_expo', 'p_roll', 'i_roll', 'd_roll', 'd_min_roll', 'p_pitch', 'i_pitch', 'd_pitch', 'd_min_pitch', 'p_yaw', 'i_yaw',
-             'deadband', 'yaw_deadband', 'rc_smoothing_auto_factor', 'feedforward_transition', 'feedforward_jitter_factor', 'feedforward_boost',
+             'deadband', 'yaw_deadband', 'rc_smoothing_auto_factor', 'vbat_sag_compensation', 'feedforward_transition', 'feedforward_jitter_factor', 'feedforward_boost',
              'osd_stick_overlay_left_pos', 'osd_stick_overlay_right_pos', 'osd_stick_overlay_radio_mode', 'osd_ah_pos', 'craft_name'
 # The values of a config listing, taken from its active PID profile and active rate profile
 function Config-Values($lines) {
@@ -1409,6 +1430,7 @@ function Diff-Rows {
     $rows += @{ label = (T 'df_pid2' (T 'ax_yaw').ToLower()); keys = @('p_yaw', 'i_yaw'); show = { param($h, $k) "$($h[$k[0]]) / $($h[$k[1]])" } }
     $rows += @{ label = (T 'df_deadband'); keys = @('deadband', 'yaw_deadband'); show = { param($h, $k) "$($h[$k[0]]) / $($h[$k[1]])" } }
     $rows += @{ label = (T 'df_smooth'); keys = @('rc_smoothing_auto_factor'); show = { param($h, $k) "$($h[$k[0]])" } }
+    $rows += @{ label = (T 'df_sag'); keys = @('vbat_sag_compensation'); show = { param($h, $k) "$($h[$k[0]]) %" } }
     $rows += @{ label = (T 'df_ff'); keys = @('feedforward_transition', 'feedforward_jitter_factor', 'feedforward_boost'); show = { param($h, $k) (($k | ForEach-Object { $h[$_] }) -join ' / ') } }
     $rows += @{ label = (T 'kv_sticks'); keys = @('osd_stick_overlay_left_pos'); show = { param($h, $k) & $vis $h[$k[0]] }.GetNewClosure() }
     $rows += @{ label = (T 'kv_horizon'); keys = @('osd_ah_pos'); show = { param($h, $k) & $vis $h[$k[0]] }.GetNewClosure() }
@@ -1623,6 +1645,10 @@ function Dispatch([string]$line) {
             elseif ($low -match $script:STR['rx_diff']) { Do-Diff } else { Do-Status }
         }
         elseif ($low -match $script:STR['rx_restore']) { Do-Restore }
+        elseif ($low -match $script:STR['rx_remove']) {
+            $rest = $line.Trim().Substring($Matches[0].Length)
+            if ($rest -match '^\s*-p\s+("([^"]+)"|(\S+))\s*$') { Do-RemoveProfile "$($Matches[2])$($Matches[3])" } else { Note (T 'n_removewhat') }
+        }
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {
             $axes = @()

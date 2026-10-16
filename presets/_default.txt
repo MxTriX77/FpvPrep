@@ -55,3 +55,6 @@ set rc_smoothing_auto_factor = 80
 set feedforward_transition = 40
 set feedforward_jitter_factor = 12
 set feedforward_boost = 0
+# Battery sag compensation: the same stick gives the same push from a full pack to an empty one.
+# It holds a little power back while the pack is full. Added at the user's request, 2026-10-16.
+set vbat_sag_compensation = 100

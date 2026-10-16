@@ -13,7 +13,7 @@ function New-FC([string]$id = '5150aaaa1111222233334444', [string]$craft = 'SIM2
                              rc_smoothing_auto_factor = '30'; craft_name = $craft
                              vcd_video_system = 'AUTO'; osd_ah_pos = '206'; osd_stick_overlay_left_pos = '234'; osd_stick_overlay_right_pos = '234'; osd_stick_overlay_radio_mode = '1' }
         profile = [ordered]@{ p_roll = '65'; i_roll = '20'; d_roll = '70'; d_min_roll = '60'; p_pitch = '60'; i_pitch = '20'; d_pitch = '65'; d_min_pitch = '60'
-                              f_roll = '80'; f_pitch = '80'; feedforward_transition = '0'; feedforward_jitter_factor = '7'; feedforward_boost = '15' }
+                              f_roll = '80'; f_pitch = '80'; feedforward_transition = '0'; feedforward_jitter_factor = '7'; feedforward_boost = '15'; vbat_sag_compensation = '0' }
         rates = [ordered]@{ thr_mid = '50'; thr_expo = '0'; rates_type = 'ACTUAL'; roll_rc_rate = '7'; pitch_rc_rate = '7'; yaw_rc_rate = '7'
                             roll_expo = '0'; pitch_expo = '0'; yaw_expo = '0'; roll_srate = '15'; pitch_srate = '15'; yaw_srate = '15'
                             throttle_limit_type = 'OFF'; throttle_limit_percent = '100' }
