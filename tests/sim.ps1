@@ -503,13 +503,15 @@ Check 'a name with no profile is said so, nothing created' ($o.Contains((T 'f_no
 $script:cur = $null; $o = Line "$($C.ptune) DIF $($C.roll_less)"
 Check 'it needs no bind' ((Preset 'DIF') -match 'set roll_rc_rate = 5' -and -not (Has $o 'f_nobind'))
 
-# ---------------------------------------------------------------- rm -p NAME: remove a saved profile
+# ---------------------------------------------------------------- rm NAME: remove a saved profile
 $o = Line "$($C.rem) CRV" @('n')
-Check 'rm -p asks first, and no means nothing is removed' ($o.Contains((T 'q_remove' 'CRV').Substring(0, 10)) -and (Test-Path (Join-Path $data 'presets\CRV.txt')))
+Check 'rm asks first, and no means nothing is removed' ($o.Contains((T 'q_remove' 'CRV').Substring(0, 10)) -and (Test-Path (Join-Path $data 'presets\CRV.txt')))
 $o = Line "$($C.rem) CRV" @('y')
 Check 'yes removes it and keeps a copy' (-not (Test-Path (Join-Path $data 'presets\CRV.txt')) -and @(Get-ChildItem (Join-Path $data 'quads') -Filter 'removed_*_CRV.txt').Count -eq 1 -and $o.Contains(((T 'b_removed') -f 'CRV', '').Substring(0, 12)))
 $o = Line "$($C.rem) _default" @('y')
 Check 'the standard set cannot be removed' ((Has $o 'f_noremove_std') -and (Test-Path (Join-Path $data 'presets\_default.txt')))
+$s0 = Test-Path (Join-Path $data 'presets\MID.txt'); $o = Line "$($C.rem) -p MID" @('y')
+Check 'the older rm -p NAME still works' ($s0 -and -not (Test-Path (Join-Path $data 'presets\MID.txt')))
 $o = Line "$($C.rem) NOSUCH" @('y')
 Check 'a name with no profile is said so' ($o.Contains((T 'f_nopreset' 'NOSUCH')))
 

@@ -38,7 +38,7 @@
     # ---- start screen
     banner = @(
         @('  FPVPREP {1}', 'White', '  --  Betaflight pre-flight utility', 'Gray'),
-        @('  build {0}  win32  serial cli 115200 8N1', 'DarkGray'),
+        @('  build {0}   link to the drone: USB, 115200 baud, 8N1', 'DarkGray'),
         @('', 'DarkGray'),
         @('  writes flight feel only. switches, channels, failsafe: never written.', 'DarkYellow')
     )
@@ -246,7 +246,7 @@
     df_times = '{0} x {1}'
     r_restore = 'RESTORE'
     r_remove = 'REMOVE  //  PROFILE {0}'
-    n_removewhat = 'rm -p NAME'
+    n_removewhat = 'rm NAME'
     f_noremove_std = 'the standard set cannot be removed'
     q_remove = 'remove the profile {0}?'
     n_removed_copy = 'a copy is kept: quads\{0}'
@@ -281,7 +281,7 @@
         @('pid [ stiffer | softer | -m ]', 'roll and pitch PID, 10% a step; -m: type them by hand. risky'),
         @('say the word again for a bigger step:  yaw more more'),
         @(),
-        @('rm -p NAME', 'remove a saved profile'),
+        @('rm NAME', 'remove a saved profile'),
         @('restore', 'put the drone back as it arrived'),
         @('radio', 'radio stick calibration'),
         @('help / exit', '')
@@ -292,6 +292,6 @@
         fix_ctl = 'set controls'; fix_snd = 'set sound off'; snd_on = 'set sound on'; old_fix = 'fix controls'; set_name = 'set name'; sticks_on = 'set sticks on'; sticks_off = 'set sticks off'; sticks = 'set sticks'
         yaw_more = 'yaw more'; roll_more = 'roll more'; roll_less = 'roll less'; pr_less = 'pitch roll less'
         motors = 'motors'; motors_full = 'motors -3'
-        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; bind_ls = 'bind -ls'; ptune = 'set -p'; rem = 'rm -p'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
+        fix_short = 'controls'; pid = 'pid'; pid_stiffer = 'pid stiffer'; pid_softer = 'pid softer'; bare_stiffer = 'stiffer'; thr_more = 'throttle more'; thr_softer = 'throttle softer'; thr_sharper = 'throttle stiffer'; edit = 'set controls -m'; pid_edit = 'pid -m'; thr_edit = 'throttle -m'; yaw_edit = 'yaw -m'; pr_edit = 'pitch roll -m'; diff = 'status -diff'; prof = 'status -p'; bind_ls = 'bind -ls'; ptune = 'set -p'; rem = 'rm'; restore = 'restore'; hor_on = 'set horizon on'; hor_off = 'set horizon off'; odd_name = 'heavy'; help = 'help'; exit = 'exit'
     }
 }

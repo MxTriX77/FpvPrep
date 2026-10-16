@@ -45,7 +45,7 @@ $script:pending = $false; $script:col = 62; $script:frame = 0
 # The version, raised with every published change: the middle number for new or changed
 # commands, the last for fixes and looks, the first when the way of working changes (2.0: bind
 # became a session). History in the README.
-$VERSION = '2.2'
+$VERSION = '2.3'
 $script:cur = $null       # the drone bound in this window: id, name, craft
 $script:motorLog = ''
 
@@ -1195,7 +1195,7 @@ function Do-ProfileTune([string]$name, [string]$what) {
     Write-Host ''
     Bar (T 'b_ptuned' $NAME (Took $clock)) 'Green'
 }
-# rm -p NAME: delete a saved profile, after asking. A copy is kept in quads\ so a slip can be undone
+# rm NAME: delete a saved profile, after asking. A copy is kept in quads\ so a slip can be undone
 # by hand. The standard set can't be removed. No drone and no session involved.
 function Do-RemoveProfile([string]$name) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -1651,7 +1651,8 @@ function Dispatch([string]$line) {
         elseif ($low -match $script:STR['rx_restore']) { Do-Restore }
         elseif ($low -match $script:STR['rx_remove']) {
             $rest = $line.Trim().Substring($Matches[0].Length)
-            if ($rest -match '^\s*-p\s+("([^"]+)"|(\S+))\s*$') { Do-RemoveProfile "$($Matches[2])$($Matches[3])" } else { Note (T 'n_removewhat') }
+            # rm NAME (the older rm -p NAME still works)
+            if ($rest -match '^\s*(-p\s+)?("([^"]+)"|([^-\s]\S*))\s*$') { Do-RemoveProfile "$($Matches[3])$($Matches[4])" } else { Note (T 'n_removewhat') }
         }
         elseif ($low -match $script:STR['rx_radio']) { Do-Radio }
         else {
