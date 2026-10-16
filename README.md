@@ -38,6 +38,21 @@ Double-click `FPV.cmd`. Keep Betaflight Configurator closed or disconnected: onl
 
 The name in the firmware says nothing about which profile a drone belongs to, so the tool never guesses. `bind NAME` starts a session for the drone on the cable, and every command that writes to a drone or uses a profile works only on that drone, recognised by its id. With nothing bound it stops at once; with another drone on the cable it says so and writes nothing. The same drone unplugged and plugged back in carries on. `status`, `status -p`, `help`, `radio` and `bind -ls` work without a session. The motor run checks the drone's id itself before anything spins.
 
+## Versions
+
+The banner shows the version. The middle number goes up with new or changed commands, the last with fixes and looks, the first when the way of working changes.
+
+| Version | What came in |
+|---|---|
+| 1.0 | The console: bind, status with health check, motors, controls, sound, axis words, pid levels, radio check |
+| 1.1 - 1.3 | Axis changes without asking; no quad type built in; leaner screens; names in any letters |
+| 1.4 | set controls always writes; set name; throttle left to the builder |
+| 1.5 - 1.7 | Throttle softer / stiffer; repeated words; sticks, sound, horizon on the OSD; motors -N; help with options |
+| 1.8 - 1.12 | Editors: set controls -m, pid -m, throttle -m, yaw / pitch / roll -m; status -diff; restore |
+| 1.13 | status -p NAME; two ports in Windows handled; every motor read on 8-motor drones |
+| 2.0 | Bind is a session: writing commands only on the bound drone; bind -ls |
+| 2.1 | set -p NAME: tune a saved profile with no drone |
+| 2.2 | Battery sag compensation in the standard set; rm -p NAME; no warning for a radio that is off |
 ## What the health check reads
 
 Sensors present, accelerometer calibrated, processor load, sensor bus errors, battery cells and volts per cell, radio link, each ESC answering (motors at rest), and the reasons Betaflight would refuse to arm. Everything healthy is packed into two lines; each problem gets one line.

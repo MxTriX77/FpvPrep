@@ -37,7 +37,7 @@
 
     # ---- start screen
     banner = @(
-        @('  FPVPREP 1.0', 'White', '  --  Betaflight pre-flight utility', 'Gray'),
+        @('  FPVPREP {1}', 'White', '  --  Betaflight pre-flight utility', 'Gray'),
         @('  build {0}  win32  serial cli 115200 8N1', 'DarkGray'),
         @('', 'DarkGray'),
         @('  writes flight feel only. switches, channels, failsafe: never written.', 'DarkYellow')

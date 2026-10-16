@@ -42,6 +42,10 @@ $LIT = [string][char]0x2593; $SHD = [string][char]0x2591; $BLK = [string][char]0
 $TEE = [string][char]0x251C + [string][char]0x2500
 $IND = ' ' * 5       # sub-lines sit under the step text
 $script:pending = $false; $script:col = 62; $script:frame = 0
+# The version, raised with every published change: the middle number for new or changed
+# commands, the last for fixes and looks, the first when the way of working changes (2.0: bind
+# became a session). History in the README.
+$VERSION = '2.2'
 $script:cur = $null       # the drone bound in this window: id, name, craft
 $script:motorLog = ''
 
@@ -1669,11 +1673,11 @@ function Dispatch([string]$line) {
 
 # ---------------------------------------------------------------- start
 function Banner {
-    $build = (Get-Item (Join-Path $root 'fpv.ps1')).LastWriteTime.ToString('yyyyMMdd')
+    $build = (Get-Item (Join-Path $root 'fpv.ps1')).LastWriteTime.ToString('yyyyMMdd')   # {0} in the banner text, {1} is $VERSION
     Write-Host ''
     foreach ($b in $script:STR['banner']) {
         for ($i = 0; $i -lt $b.Count; $i += 2) {
-            Write-Host ($b[$i] -f $build) -ForegroundColor $b[$i + 1] -NoNewline:($i + 2 -lt $b.Count)
+            Write-Host ($b[$i] -f $build, $VERSION) -ForegroundColor $b[$i + 1] -NoNewline:($i + 2 -lt $b.Count)
         }
     }
     Write-Host ('  ' + ('-' * $WIDTH)) -ForegroundColor DarkGray
